@@ -32,6 +32,19 @@ try {
     $cl = (Invoke-WebRequest "$base/classes" -UseBasicParsing).Content | ConvertFrom-Json
     Check 'classes registered' ($cl.classes.Count -gt 0) "count=$($cl.classes.Count)"
 
+    Write-Output '--- GET /info ---'
+    $inf = (Invoke-WebRequest "$base/info" -UseBasicParsing).Content | ConvertFrom-Json
+    Check 'info identity (version, discovered prog_id, routes)' (
+        $inf.ok -and $inf.version -eq '0.1.0' -and $inf.prog_id -like 'Busy2L*' -and
+        $inf.company -eq $script:Comp -and $inf.routes -contains '/constants'
+    ) ($inf | ConvertTo-Json -Compress)
+
+    Write-Output '--- GET /constants ---'
+    $konst = (Invoke-WebRequest "$base/constants" -UseBasicParsing).Content | ConvertFrom-Json
+    Check 'constants tables (ACCOUNT=2, SALE=9)' (
+        $konst.ok -and $konst.masters.ACCOUNT_MASTER -eq 2 -and $konst.vouchers.SALE -eq 9
+    ) ($konst | ConvertTo-Json -Compress)
+
     Write-Output '--- GET /nope (404) ---'
     $e4 = Invoke-Http "$base/nope" 'GET' '' $null $null
     Check '404 JSON envelope' ($e4.st -eq 404 -and $e4.body.Contains('"ok":false')) "status=$($e4.st) body=$($e4.body)"

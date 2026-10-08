@@ -17,11 +17,14 @@ pub fn emitJson(io: Io, alloc: Allocator, v: *const json.Value) !void {
     try printOut(io, alloc, out.items);
 }
 
-pub fn errJsonText(alloc: Allocator, msg: []const u8) ![]u8 {
+pub fn errJsonText(alloc: Allocator, code: []const u8, msg: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     var w = json.Writer{ .buf = &out, .alloc = alloc };
     try w.raw("{\"ok\":false,");
+    try w.field("code");
+    try w.str(code);
+    try w.raw(",");
     try w.field("error");
     try w.str(msg);
     try w.raw("}");

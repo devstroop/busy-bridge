@@ -25,8 +25,10 @@ busy-bridge classes          # all registered Busy* ProgIDs (925 on Rel 14)
 busy-bridge surface          # full IDispatch surface of the default class
 ```
 
-Via busy-bridge the version handling disappears entirely — the bridge owns
-the ProgID resolution.
+Via busy-bridge the version handling disappears entirely: the bridge
+**auto-discovers the newest registered ProgID at startup** (registry scan —
+`--prog-id` overrides; nothing registered fails fast with
+`code:'busy_not_found'`).
 
 **Bitness:** all BUSY COM servers are 32-bit. Any direct COM caller must be
 32-bit (our bridge builds `x86-windows-gnu`). 64-bit clients should call

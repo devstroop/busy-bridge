@@ -74,3 +74,30 @@ test "urlDecode" {
     try testing.expectEqualStrings("a+b", d); // '+' untouched
     try testing.expectEqualStrings("plain", e);
 }
+
+/// Stable machine code for a Zig error: "InvokeFailed" -> "invoke_failed".
+/// Returned slice points into `buf` (caller-owned stack buffer).
+pub fn errCode(err: anyerror, buf: []u8) []const u8 {
+    const name = @errorName(err);
+    var o: usize = 0;
+    for (name, 0..) |ch, i| {
+        const upper = std.ascii.isUpper(ch);
+        if (upper and i > 0 and o + 2 < buf.len) {
+            buf[o] = '_';
+            o += 1;
+        }
+        if (o >= buf.len) break;
+        buf[o] = std.ascii.toLower(ch);
+        o += 1;
+    }
+    return buf[0..o];
+}
+
+test "errCode" {
+    const testing = std.testing;
+    var b: [64]u8 = undefined;
+    try testing.expectEqualStrings("invoke_failed", errCode(error.InvokeFailed, &b));
+    try testing.expectEqualStrings("bad_document", errCode(error.BadDocument, &b));
+    try testing.expectEqualStrings("open_db_failed", errCode(error.OpenDbFailed, &b));
+    try testing.expectEqualStrings("unexpected_char", errCode(error.UnexpectedChar, &b));
+}

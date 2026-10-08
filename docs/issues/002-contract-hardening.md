@@ -1,6 +1,6 @@
 # 002 · Contract hardening: constants.json, GET /info, error codes
 
-**Labels:** `enhancement` `api` · **Effort:** S · **Status:** open · **Milestone:** H0
+**Labels:** `enhancement` `api` · **Effort:** S · **Status:** closed (2026-10-08) · **Milestone:** H0
 
 ## Problem
 
@@ -31,11 +31,11 @@ avoidable frictions:
 
 ## Acceptance criteria
 
-- [ ] `/constants` returns the full tables from `docs/constants.md` (round-trip test vs doc).
-- [ ] `/info` accurate for the running process (version, resolved ProgID, company).
-- [ ] Every error path in `commands.zig`/`http.zig` includes a `code` (grep-testable).
-- [ ] Unit tests + `tests/live` checks; README + docs/constants.md reference `/constants` as canonical.
-- [ ] Backward compatible: existing `error`/`description` fields unchanged.
+- [x] `/constants` returns the full tables from `docs/constants.md` (round-trip test vs doc).
+- [x] `/info` accurate for the running process (version, resolved ProgID, company).
+- [x] Every error path in `commands.zig`/`http.zig` includes a `code` (grep-testable).
+- [x] Unit tests + `tests/live` checks; README + docs/constants.md reference `/constants` as canonical.
+- [x] Backward compatible: existing `error`/`description` fields unchanged.
 
 ## Notes
 

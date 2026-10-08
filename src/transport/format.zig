@@ -22,6 +22,7 @@ const xml = @import("../util/xml.zig");
 const xml_write = @import("../util/xml/write.zig");
 const busyc = @import("../core/com.zig");
 const xmlmeta = @import("../core/xmlmeta.zig");
+const constants = @import("../core/constants.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -141,14 +142,92 @@ fn taggedScalar(alloc: Allocator, out: *std.ArrayList(u8), tag: []const u8, v: *
     try out.appendSlice(alloc, ">");
 }
 
-pub fn errorXml(alloc: Allocator, code: []const u8, msg: []const u8) ![]u8 {
+pub fn errorXml(alloc: Allocator, code: []const u8, machine: []const u8, msg: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     try out.appendSlice(alloc, "<Error code='");
     try xml_write.escapeAttr(alloc, &out, code);
+    try out.appendSlice(alloc, "' error='");
+    try xml_write.escapeAttr(alloc, &out, machine);
     try out.appendSlice(alloc, "'>");
     try xml_write.escapeText(alloc, &out, msg);
     try out.appendSlice(alloc, "</Error>");
+    return out.toOwnedSlice(alloc);
+}
+
+/// GET /constants — canonical master/voucher code tables (core/constants.zig)
+/// as data; the machine-readable twin of docs/constants.md.
+pub fn constantsJson(alloc: Allocator) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var w = json.Writer{ .buf = &out, .alloc = alloc };
+    try w.raw("{\"ok\":true,\"masters\":{");
+    for (constants.masters, 0..) |m, i| {
+        if (i != 0) try w.raw(",");
+        try w.field(m.name);
+        var b: [24]u8 = undefined;
+        try w.raw(std.fmt.bufPrint(&b, "{d}", .{m.code}) catch unreachable);
+    }
+    try w.raw("},\"vouchers\":{");
+    for (constants.vouchers, 0..) |v, i| {
+        if (i != 0) try w.raw(",");
+        try w.field(v.name);
+        var b: [24]u8 = undefined;
+        try w.raw(std.fmt.bufPrint(&b, "{d}", .{v.code}) catch unreachable);
+    }
+    try w.raw("}}");
+    return out.toOwnedSlice(alloc);
+}
+
+pub fn constantsXml(alloc: Allocator) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var b: [24]u8 = undefined;
+    try out.appendSlice(alloc, "<Constants><Masters>");
+    for (constants.masters) |m| {
+        try out.appendSlice(alloc, "<Master code='");
+        try out.appendSlice(alloc, std.fmt.bufPrint(&b, "{d}", .{m.code}) catch unreachable);
+        try out.appendSlice(alloc, "' name='");
+        try xml_write.escapeAttr(alloc, &out, m.name);
+        try out.appendSlice(alloc, "'/>");
+    }
+    try out.appendSlice(alloc, "</Masters><Vouchers>");
+    for (constants.vouchers) |v| {
+        try out.appendSlice(alloc, "<Voucher code='");
+        try out.appendSlice(alloc, std.fmt.bufPrint(&b, "{d}", .{v.code}) catch unreachable);
+        try out.appendSlice(alloc, "' name='");
+        try xml_write.escapeAttr(alloc, &out, v.name);
+        try out.appendSlice(alloc, "'/>");
+    }
+    try out.appendSlice(alloc, "</Vouchers></Constants>");
+    return out.toOwnedSlice(alloc);
+}
+
+/// GET /info — identity/capabilities of the running serve process.
+pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var w = json.Writer{ .buf = &out, .alloc = alloc };
+    try w.raw("{\"ok\":true,\"bridge\":\"busy-bridge\",\"version\":");
+    try w.str(version);
+    try w.raw(",\"prog_id\":");
+    try w.str(prog_id);
+    try w.raw(",\"company\":");
+    if (comp) |c| try w.str(c) else try w.raw("null");
+    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\"]}");
+    return out.toOwnedSlice(alloc);
+}
+
+pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, "<Info bridge='busy-bridge' version='");
+    try xml_write.escapeAttr(alloc, &out, version);
+    try out.appendSlice(alloc, "' prog_id='");
+    try xml_write.escapeAttr(alloc, &out, prog_id);
+    try out.appendSlice(alloc, "' company='");
+    if (comp) |c| try xml_write.escapeAttr(alloc, &out, c);
+    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/></Info>");
     return out.toOwnedSlice(alloc);
 }
 
@@ -326,9 +405,9 @@ test "negotiation" {
 }
 
 test "envelope shapes" {
-    const err = try errorXml(testing.allocator, "404", "unknown <route> & more");
+    const err = try errorXml(testing.allocator, "404", "not_found", "unknown <route> & more");
     defer testing.allocator.free(err);
-    try testing.expectEqualStrings("<Error code='404'>unknown &lt;route&gt; &amp; more</Error>", err);
+    try testing.expectEqualStrings("<Error code='404' error='not_found'>unknown &lt;route&gt; &amp; more</Error>", err);
 
     const h = try healthXml(testing.allocator);
     defer testing.allocator.free(h);
@@ -422,4 +501,7 @@ test "xmlmeta classification is reachable from transport" {
 test "test aggregation for the build test root" {
     _ = @import("../util/xml.zig"); // facade pulls parse/write/map suites
     _ = @import("../util/helpers.zig");
+    _ = @import("../core/registry.zig");
+    _ = @import("../core/constants.zig");
+    _ = @import("envelope.zig");
 }

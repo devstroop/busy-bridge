@@ -1,8 +1,10 @@
 //! CLI surface: usage text, option defaults, argument access.
 const std = @import("std");
+const registry = @import("../core/registry.zig");
 const ops = @import("../core/ops.zig");
 
-pub const DEFAULT_PROG = "Busy2L21.CFixedInterface";
+pub const VERSION = "0.1.0";
+
 pub const DEFAULT_BUSY = "C:\\BusyWin\\";
 pub const DEFAULT_DATA = "C:\\BusyWin\\DATA\\";
 pub const DEFAULT_PORT: u16 = 9820;
@@ -20,7 +22,8 @@ pub const Usage =
     \\       [--comp C] [--prog-id P]                   POST /query {"sql":..} /call {"method":..}
     \\  busy-bridge version
     \\
-    \\common options: --prog-id (default Busy2L21.CFixedInterface)
+    \\common options: --prog-id (default: auto-discovered newest registered
+    \\                  Busy2L*.CFixedInterface; error if BUSY not installed)
     \\                --busy (default C:\BusyWin\) --data (default C:\BusyWin\DATA\)
     \\                --out json|xml: response format for data commands (default json;
     \\                serve negotiates per-request via the Accept header instead)
@@ -45,9 +48,15 @@ pub const Cli = struct {
     }
 };
 
-pub fn optsFrom(cli: Cli) ops.OpenOpts {
+/// Resolve open options. `--prog-id` wins; otherwise the newest registered
+/// Busy2L*.CFixedInterface is discovered from the registry (issue #1), so a
+/// BUSY upgrade needs no flag/code change. error.NoBusyProgId when nothing
+/// is registered (BUSY not installed).
+pub fn optsFrom(cli: Cli) !ops.OpenOpts {
+    const prog = cli.get("--prog-id") orelse
+        (registry.newestFixedInterface() orelse return error.NoBusyProgId);
     return .{
-        .prog_id = cli.getOr("--prog-id", DEFAULT_PROG),
+        .prog_id = prog,
         .busy = cli.getOr("--busy", DEFAULT_BUSY),
         .data = cli.getOr("--data", DEFAULT_DATA),
         .comp = cli.get("--comp"),

@@ -5,6 +5,7 @@ $Name = 'ZigBridgeTest'
 
 $xml = '<Account><Name>' + $Name + '</Name><PrintName>' + $Name + '</PrintName><ParentGroup>Cash-in-hand</ParentGroup><Address><OF /><CountryName>India</CountryName><StateName>Delhi</StateName></Address><SupplierType>1</SupplierType><PriceLevel>@</PriceLevel><PriceLevelForPurc>@</PriceLevelForPurc><TaxType>Others</TaxType><TypeOfDealerGST>Un-Registered</TypeOfDealerGST><ReverseChargeType>Not Applicable</ReverseChargeType><InputType>Section 17(5)-ITC None</InputType></Account>'
 $saveArgs = To-B64 ('["2","' + $xml + '",{"$byref":""},false]')
+# note: '2' = ACCOUNT_MASTER (master/voucher code tables: GET /constants)
 
 Write-Output 'STEP 1: pre-check (must be empty)'
 $pre = (& $script:Bridge query --comp $script:Comp --sql "SELECT Code FROM Master1 WHERE Name = '$Name'") | ConvertFrom-Json

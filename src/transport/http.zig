@@ -37,6 +37,7 @@ const ConnCtx = struct {
     io: Io,
     sess: *busyc.Session,
     prog_id: []const u8,
+    comp: ?[]const u8,
 };
 
 const Route = struct {
@@ -51,10 +52,10 @@ fn respond(w: *Io.Writer, status: []const u8, content_type: []const u8, body: []
     try w.flush();
 }
 
-fn errPayload(alloc: Allocator, fmt: Format, code: []const u8, msg: []const u8) ![]u8 {
+fn errPayload(alloc: Allocator, fmt: Format, code: []const u8, machine: []const u8, msg: []const u8) ![]u8 {
     return switch (fmt) {
-        .json => envelope.errJsonText(alloc, msg),
-        .xml => format.errorXml(alloc, code, msg),
+        .json => envelope.errJsonText(alloc, machine, msg),
+        .xml => format.errorXml(alloc, code, machine, msg),
     };
 }
 
@@ -118,7 +119,7 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
     if (content_length > serve_body_buf.len) {
         var wbuf: [1024]u8 = undefined;
         var w2 = stream.writer(ctx.io, &wbuf);
-        const p = errPayload(alloc, fmt, "413", "body too large") catch return;
+        const p = errPayload(alloc, fmt, "413", "payload_too_large", "body too large") catch return;
         defer alloc.free(p);
         respond(&w2.interface, "413 Payload Too Large", ctOf(fmt), p) catch {};
         return;
@@ -132,11 +133,12 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
     const ralloc = req_arena.allocator();
 
     const r = route(ctx, ralloc, fmt, verb, path, query, body, ctype_hdr) catch |err| blk: {
+        var cb: [64]u8 = undefined;
         const msg = if (ctx.sess.lastError().len > 0) ctx.sess.lastError() else @errorName(err);
         break :blk Route{
             .status = "500 Internal Server Error",
             .content_type = ctOf(fmt),
-            .payload = try errPayload(ralloc, fmt, "500", msg),
+            .payload = try errPayload(ralloc, fmt, "500", helpers.errCode(err, &cb), msg),
         };
     };
     var wbuf: [16384]u8 = undefined;
@@ -146,11 +148,11 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
     };
 }
 
-fn badReq(alloc: Allocator, fmt: Format, msg: []const u8) Route {
+fn badReq(alloc: Allocator, fmt: Format, machine: []const u8, msg: []const u8) Route {
     return .{
         .status = "400 Bad Request",
         .content_type = ctOf(fmt),
-        .payload = errPayload(alloc, fmt, "400", msg) catch unreachable,
+        .payload = errPayload(alloc, fmt, "400", machine, msg) catch unreachable,
     };
 }
 
@@ -205,15 +207,27 @@ fn route(
         return .{ .status = "200 OK", .content_type = jct, .payload = try out.toOwnedSlice(ralloc) };
     }
 
+    if (eql(verb, "GET") and eql(path, "/info")) {
+        if (fmt == .xml)
+            return .{ .status = "200 OK", .content_type = xct, .payload = try format.infoXml(ralloc, cli_mod.VERSION, ctx.prog_id, ctx.comp) };
+        return .{ .status = "200 OK", .content_type = jct, .payload = try format.infoJson(ralloc, cli_mod.VERSION, ctx.prog_id, ctx.comp) };
+    }
+
+    if (eql(verb, "GET") and eql(path, "/constants")) {
+        if (fmt == .xml)
+            return .{ .status = "200 OK", .content_type = xct, .payload = try format.constantsXml(ralloc) };
+        return .{ .status = "200 OK", .content_type = jct, .payload = try format.constantsJson(ralloc) };
+    }
+
     if (eql(verb, "POST") and eql(path, "/query")) {
         const parsed = json.parse(ralloc, body) catch {
-            return badReq(ralloc, fmt, "invalid JSON body");
+            return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
         };
         const sql_v = parsed.get("sql") orelse {
-            return badReq(ralloc, fmt, "missing \"sql\"");
+            return badReq(ralloc, fmt, "bad_args", "missing \"sql\"");
         };
         if (sql_v.* != .str) {
-            return badReq(ralloc, fmt, "\"sql\" must be a string");
+            return badReq(ralloc, fmt, "bad_args", "\"sql\" must be a string");
         }
         const rows = try ctx.sess.queryToJson(sql_v.str);
         var rows_mut = rows;
@@ -233,15 +247,15 @@ fn route(
         if (eql(verb, "POST") and format.bodyIsXml(ctype)) {
             // raw BUSY document in the body; metadata in the query string
             const m = try qparam(ralloc, query, "method") orelse
-                return badReq(ralloc, fmt, "missing method parameter");
+                return badReq(ralloc, fmt, "bad_args", "missing method parameter");
             method = m;
             const ts = try qparam(ralloc, query, "type") orelse
-                return badReq(ralloc, fmt, "missing type parameter (raw XML bodies need ?type=N)");
+                return badReq(ralloc, fmt, "bad_args", "missing type parameter (raw XML bodies need ?type=N)");
             const type_i = std.fmt.parseInt(i64, ts, 10) catch {
-                return badReq(ralloc, fmt, "invalid type parameter");
+                return badReq(ralloc, fmt, "bad_args", "invalid type parameter");
             };
             _ = xml.parse(ralloc, body) catch {
-                return badReq(ralloc, fmt, "invalid XML body");
+                return badReq(ralloc, fmt, "invalid_xml_body", "invalid XML body");
             };
             var list: std.ArrayList(json.Value) = .empty;
             try list.append(ralloc, .{ .int = type_i });
@@ -259,13 +273,13 @@ fn route(
             raw_xml_body = true;
         } else if (eql(verb, "POST")) {
             const parsed = json.parse(ralloc, body) catch {
-                return badReq(ralloc, fmt, "invalid JSON body");
+                return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
             };
             const mv = parsed.get("method") orelse {
-                return badReq(ralloc, fmt, "missing \"method\"");
+                return badReq(ralloc, fmt, "bad_args", "missing \"method\"");
             };
             if (mv.* != .str) {
-                return badReq(ralloc, fmt, "\"method\" must be a string");
+                return badReq(ralloc, fmt, "bad_args", "\"method\" must be a string");
             }
             method = mv.str;
             var args_v: json.Value = .{ .arr = &.{} };
@@ -275,14 +289,14 @@ fn route(
             args = args_v.arr;
         } else {
             const m = try qparam(ralloc, query, "method") orelse
-                return badReq(ralloc, fmt, "missing method parameter");
+                return badReq(ralloc, fmt, "bad_args", "missing method parameter");
             method = m;
             if (try qparam(ralloc, query, "args")) |raw| {
                 const parsed = json.parse(ralloc, raw) catch {
-                    return badReq(ralloc, fmt, "invalid args (expected URL-encoded JSON array)");
+                    return badReq(ralloc, fmt, "bad_args", "invalid args (expected URL-encoded JSON array)");
                 };
                 if (parsed != .arr) {
-                    return badReq(ralloc, fmt, "args must be a JSON array");
+                    return badReq(ralloc, fmt, "bad_args", "args must be a JSON array");
                 }
                 args = parsed.arr;
             }
@@ -291,11 +305,13 @@ fn route(
         if (!raw_xml_body) {
             // JSON-object XML arguments become real XML before the COM call.
             format.xmlifyArgsInPlace(ralloc, method, args) catch |err| {
+                var cb: [64]u8 = undefined;
+                const mach = if (err == error.BadDocument) "xml_arg_invalid" else helpers.errCode(err, &cb);
                 const msg = if (err == error.BadDocument)
                     "xml argument must be a single-key document object like {\"Root\":{...}}"
                 else
                     @errorName(err);
-                return badReq(ralloc, fmt, msg);
+                return badReq(ralloc, fmt, mach, msg);
             };
         }
 
@@ -334,14 +350,26 @@ fn route(
     return .{
         .status = "404 Not Found",
         .content_type = ctOf(fmt),
-        .payload = try errPayload(ralloc, fmt, "404", "unknown route (see /health /surface /classes /query /call)"),
+        .payload = try errPayload(ralloc, fmt, "404", "not_found", "unknown route (see /health /info /constants /surface /classes /query /call)"),
     };
 }
 
 /// The `serve` command: open the session once, then accept loop.
 /// Response format is per-request (Accept header), not --out.
 pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
-    const o = optsFrom(cli);
+    const o = optsFrom(cli) catch |err| {
+        var cb: [64]u8 = undefined;
+        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
+        const m = if (err == error.NoBusyProgId)
+            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
+        else
+            @errorName(err);
+        const t = envelope.errJsonText(alloc, mach, m) catch return 1;
+        defer alloc.free(t);
+        try printOut(io, alloc, t);
+        try printOut(io, alloc, "\n");
+        return 1;
+    };
     const host = cli.getOr("--host", "127.0.0.1");
     const port = std.fmt.parseInt(u16, cli.getOr("--port", "9820"), 10) catch cli_mod.DEFAULT_PORT;
 
@@ -360,7 +388,7 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
     defer alloc.free(boot);
     try printOut(io, alloc, boot);
 
-    const ctx = ConnCtx{ .io = io, .sess = &sess, .prog_id = o.prog_id };
+    const ctx = ConnCtx{ .io = io, .sess = &sess, .prog_id = o.prog_id, .comp = o.comp };
     while (true) {
         var stream = server.accept(io) catch |err| {
             std.debug.print("accept failed: {t}\n", .{err});

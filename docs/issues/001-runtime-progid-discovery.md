@@ -1,6 +1,6 @@
 # 001 · Runtime ProgID discovery
 
-**Labels:** `bug` `robustness` · **Effort:** S · **Status:** open · **Milestone:** H0
+**Labels:** `bug` `robustness` · **Effort:** S · **Status:** closed (2026-10-08) · **Milestone:** H0
 
 ## Problem
 
@@ -23,11 +23,11 @@ Discover the newest available `CFixedInterface` at startup:
 
 ## Acceptance criteria
 
-- [ ] Default invocation works after a BUSY upgrade with no code change and no flags (validate by simulation: default fails today if `Busy2L21` is masked).
-- [ ] `--prog-id` still overrides discovery.
-- [ ] Discovery failure produces a clear error listing what was probed.
-- [ ] Unit-testable seam (probe function injectable); live test in `tests/live/` unchanged.
-- [ ] Docs (`docs/com-xml-interface.md`, README) updated to "resolved at runtime".
+- [x] Default invocation works after a BUSY upgrade with no code change and no flags (validate by simulation: default fails today if `Busy2L21` is masked).
+- [x] `--prog-id` still overrides discovery.
+- [x] Discovery failure produces a clear error listing what was probed.
+- [x] Unit-testable seam (probe function injectable); live test in `tests/live/` unchanged.
+- [x] Docs (`docs/com-xml-interface.md`, README) updated to "resolved at runtime".
 
 ## Notes
 

@@ -64,7 +64,7 @@ Two rules keep XML out of the consumer's way:
 | `surface` | `<Surface prog_id='...' count='N'><Member name kind nparams nopt><Param>...</Param></Member></Surface>` |
 | `call` (other) | `<Call method='...'><Result>true</Result><Outs><Out>...</Out></Outs></Call>` |
 | `serve /health` | `<Health status='up'/>` |
-| any failure | `<Error code='...'>message</Error>` — code = process exit code (CLI) or HTTP status |
+| any failure | `<Error code='…' error='…'>message</Error>` — `code` = exit code (CLI) / HTTP status; `error` = stable machine code (`no_recordset`, `not_found`, …) |
 
 Empty values serialize as self-closing tags (`<Result/>`), matching BUSY's
 own style.
@@ -91,6 +91,8 @@ Base: `http://127.0.0.1:9820` (loopback by default; `--host` to change).
 | Route | Request | Notes |
 |---|---|---|
 | `GET /health` | — | liveness |
+| `GET /info` | — | bridge version, resolved ProgID, open company, formats, routes |
+| `GET /constants` | — | canonical master/voucher code tables as data |
 | `GET /classes` | — | registered `Busy*` ProgIDs |
 | `GET /surface[?member=M]` | — | IDispatch surface of the active `--prog-id` |
 | `POST /query` | `{"sql":"..."}` | SQL against the open company |
@@ -98,8 +100,11 @@ Base: `http://127.0.0.1:9820` (loopback by default; `--host` to change).
 | `GET /call?method=M&args=...` | `args` = URL-encoded JSON array | read-style calls, e.g. `args=%5Bfalse%5D` |
 | `POST /call?method=M&type=N[&modify=true]` | **raw XML body** (`Content-Type: application/xml`) | document writes; `type` is the master/voucher type code at `args[0]` |
 
-Errors are `<Error code='400|500'>` or `{"ok":false,"error":"..."}` with
-matching HTTP status.
+Errors are `<Error code='400|500' error='…'>` or
+`{"ok":false,"code":"…","error":"…"}` with matching HTTP status. `code` is
+the HTTP/exit status; `error` is a stable machine code (`bad_args`,
+`invalid_json`, `invalid_xml_body`, `no_recordset`, `busy_not_found`,
+`invoke_failed`, `not_found`, …) safe to branch on.
 
 ### Example
 
@@ -179,8 +184,9 @@ the repo; override with `$env:BUSY_BRIDGE_EXE` / `$env:BUSY_COMP`).
 - **Legacy port-981 web service**: XML-mode `query` responses deliberately
   mirror its `SC=1` rowset shape; `SC=1..9` was the full legacy surface.
 - **Old sample code** (`CreateObject("Busy2L17.CFixedInterface")`) maps to
-  `Busy2L21.CFixedInterface` — construct ProgIDs at runtime
-  (`busy-bridge classes` lists them).
+  `Busy2L21.CFixedInterface` — the bridge **auto-discovers** the newest
+  registered `Busy2L*.CFixedInterface` from the registry (no hardcoding);
+  `--prog-id` overrides, and `busy-bridge classes` lists them all.
 - **Bitness**: all BUSY COM servers are 32-bit; the bridge is built x86.
  64-bit clients should use `busy-bridge serve`.
 - **Safety**: never open the same company concurrently in the BUSY GUI and

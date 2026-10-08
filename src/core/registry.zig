@@ -52,3 +52,60 @@ pub fn listBusyClasses(alloc: Allocator) ![][]const u8 {
     }
     return out.toOwnedSlice(alloc);
 }
+
+/// Newest registered version-suffixed CFixedInterface ProgID
+/// (Busy2L21.CFixedInterface beats Busy2L17.CFixedInterface), or null when
+/// no `Busy2L<n>.CFixedInterface` is registered (BUSY not installed).
+/// Read-only registry scan — no COM probing, no registry side effects.
+/// Returns a process-lifetime static buffer slice; never freed by callers.
+pub fn newestFixedInterface() ?[]const u8 {
+    var h: ?*anyopaque = null;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Classes", 0, KEY_READ, &h) != ERROR_SUCCESS)
+        return null;
+    defer _ = RegCloseKey(h);
+    var found = false;
+    var best_gen: u32 = 0;
+    var i: u32 = 0;
+    while (true) : (i += 1) {
+        var name: [512]u8 = undefined;
+        var n: u32 = name.len;
+        const rc = RegEnumKeyExA(h, i, &name, &n, null, null, null, null);
+        if (rc == ERROR_NO_MORE_ITEMS) break;
+        if (rc != ERROR_SUCCESS) continue; // skip unreadable/truncated keys
+        if (fixedInterfaceGeneration(name[0..n])) |gen| {
+            if (!found or gen > best_gen) {
+                found = true;
+                best_gen = gen;
+            }
+        }
+    }
+    if (!found) return null;
+    const s = std.fmt.bufPrint(&newest_buf, "Busy2L{d:0>2}.CFixedInterface", .{best_gen}) catch return null;
+    return s;
+}
+
+var newest_buf: [64]u8 = undefined;
+
+/// "Busy2L21.CFixedInterface" -> 21; null for anything else.
+pub fn fixedInterfaceGeneration(name: []const u8) ?u32 {
+    const suffix = ".CFixedInterface";
+    if (!std.mem.endsWith(u8, name, suffix)) return null;
+    const head = name[0 .. name.len - suffix.len];
+    const prefix = "Busy2L";
+    if (!std.mem.startsWith(u8, head, prefix)) return null;
+    const digits = head[prefix.len..];
+    if (digits.len == 0) return null;
+    return std.fmt.parseInt(u32, digits, 10) catch null;
+}
+
+test "fixedInterfaceGeneration" {
+    const testing = std.testing;
+    try testing.expectEqual(@as(u32, 21), fixedInterfaceGeneration("Busy2L21.CFixedInterface").?);
+    try testing.expectEqual(@as(u32, 17), fixedInterfaceGeneration("Busy2L17.CFixedInterface").?);
+    try testing.expectEqual(@as(u32, 99), fixedInterfaceGeneration("Busy2L99.CFixedInterface").?);
+    try testing.expect(null == fixedInterfaceGeneration("Busy2L21.CMasterServices"));
+    try testing.expect(null == fixedInterfaceGeneration("Busy2L.CFixedInterface"));
+    try testing.expect(null == fixedInterfaceGeneration("Busy2LXX.CFixedInterface"));
+    try testing.expect(null == fixedInterfaceGeneration("BusyExt21.CFixedInterface"));
+    try testing.expect(null == fixedInterfaceGeneration("CFixedInterface"));
+}
