@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const json = @import("../util/json.zig");
 const busyc = @import("../core/com.zig");
 const helpers = @import("../util/helpers.zig");
+const sqlguard = @import("../util/sqlguard.zig");
 const cli_mod = @import("cli.zig");
 const ops = @import("../core/ops.zig");
 const registry = @import("../core/registry.zig");
@@ -185,6 +186,21 @@ fn cmdQuery(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     } else cli.get("--sql") orelse {
         return fail(io, alloc, fmt, "bad_args", "missing required --sql (or --sql-b64)");
     };
+    // Query guard (issue #3): parse flags + refuse BEFORE touching COM, so
+    // a refusal is instant and works even with BUSY not running.
+    const guard = cli_mod.guardFrom(cli, "full") catch |err| {
+        return fail(io, alloc, fmt, "bad_args", switch (err) {
+            error.BadQueryMode => "invalid --query-mode (use full, read-only, off)",
+            error.BadMaxRows => "invalid --max-rows (non-negative integer; 0 = unlimited)",
+        });
+    };
+    sqlguard.check(guard.mode, sql) catch {
+        return fail(io, alloc, fmt, "query_not_allowed", switch (guard.mode) {
+            .off => "query disabled by --query-mode off",
+            .read_only => "read-only mode accepts only a single SELECT/WITH statement (no multi-statement SQL)",
+            else => unreachable,
+        });
+    };
     const o = optsFrom(cli) catch |err| {
         var cb: [64]u8 = undefined;
         const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
@@ -216,8 +232,13 @@ fn cmdQuery(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
         var rows_mut = rows;
         defer rows_mut.deinit(alloc);
         out_text = switch (fmt) {
-            .json => try okWrap(alloc, "rows", &rows_mut),
-            .xml => try format.rowsXml(alloc, &rows_mut),
+            .json => try envelope.rowsJson(alloc, &rows_mut, guard.max_rows),
+            .xml => blk2: {
+                // Legacy SC=1 rowset has no truncation marker — cap the
+                // rows via a shallow view, document JSON as the aware mode.
+                const view = envelope.rowView(&rows_mut, guard.max_rows);
+                break :blk2 try format.rowsXml(alloc, &view);
+            },
         };
     }
     defer alloc.free(out_text);

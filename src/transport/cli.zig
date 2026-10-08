@@ -2,12 +2,16 @@
 const std = @import("std");
 const registry = @import("../core/registry.zig");
 const ops = @import("../core/ops.zig");
+const sqlguard = @import("../util/sqlguard.zig");
 
 pub const VERSION = "0.1.0";
 
 pub const DEFAULT_BUSY = "C:\\BusyWin\\";
 pub const DEFAULT_DATA = "C:\\BusyWin\\DATA\\";
 pub const DEFAULT_PORT: u16 = 9820;
+/// Default `--max-rows` cap for both transports (0 = unlimited when set
+/// explicitly). Protects the single-threaded serve loop and clients alike.
+pub const DEFAULT_MAX_ROWS: usize = 10_000;
 
 pub const Usage =
     \\busy-bridge - programmatic interface over BUSY ERP's COM API surface
@@ -16,10 +20,13 @@ pub const Usage =
     \\  busy-bridge classes                            list all registered BUSY COM classes
     \\  busy-bridge surface [--prog-id P] [--member M] dump IDispatch surface as JSON
     \\  busy-bridge query --comp C --sql "SELECT ..."  query open company (opens via OpenDB)
+    \\       [--query-mode full|read-only|off] [--max-rows N]   guard (default full, 10000)
     \\  busy-bridge call --method M [--args '[..]']    invoke any COM method, JSON args,
     \\       [--prog-id P] [--comp C]                   {"$byref": v} marks out-params
     \\  busy-bridge serve [--port 9820] [--host H]     HTTP JSON API: GET /surface /classes
     \\       [--comp C] [--prog-id P]                   POST /query {"sql":..} /call {"method":..}
+    \\       [--query-mode full|read-only|off]          guard (serve defaults to read-only)
+    \\       [--max-rows N]                             row cap (default 10000; 0 = unlimited)
     \\  busy-bridge version
     \\
     \\common options: --prog-id (default: auto-discovered newest registered
@@ -61,4 +68,19 @@ pub fn optsFrom(cli: Cli) !ops.OpenOpts {
         .data = cli.getOr("--data", DEFAULT_DATA),
         .comp = cli.get("--comp"),
     };
+}
+
+/// Query guard flags (issue #3): `--query-mode` (caller supplies the
+/// transport default: "full" for `query`, "read-only" for `serve`) and
+/// `--max-rows` (default DEFAULT_MAX_ROWS; 0 = unlimited).
+/// Errors: error.BadQueryMode / error.BadMaxRows.
+pub const Guard = struct { mode: sqlguard.Mode, max_rows: usize };
+
+pub fn guardFrom(cli: Cli, default_mode: []const u8) !Guard {
+    const m = sqlguard.parseMode(cli.getOr("--query-mode", default_mode)) orelse
+        return error.BadQueryMode;
+    const raw = cli.get("--max-rows") orelse
+        return .{ .mode = m, .max_rows = DEFAULT_MAX_ROWS };
+    const n = std.fmt.parseInt(usize, raw, 10) catch return error.BadMaxRows;
+    return .{ .mode = m, .max_rows = n };
 }

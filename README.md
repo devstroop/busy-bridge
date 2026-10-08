@@ -11,8 +11,11 @@ against a DEMO company), Zig 0.17, zero runtime dependencies.
 busy-bridge classes                            # all registered Busy* COM ProgIDs (925 on Rel 14)
 busy-bridge surface [--prog-id P] [--member M] # full IDispatch surface of a class
 busy-bridge query --comp COMP0001 --sql "..."   # SQL -> rows (opens company via OpenDB)
+      [--query-mode full|read-only|off]        # query guard (default: full; see "Query safety")
+      [--max-rows N]                           # row cap (default 10000; 0 = unlimited)
 busy-bridge call --method M --args '[...]'      # any of ~4,400 COM methods
 busy-bridge serve [--port 9820] [--comp C]      # HTTP JSON/XML API over the same ops
+      [--query-mode ...] [--max-rows N]         # serve defaults to read-only / 10000
 ```
 
 ## Wire contract: one format per response
@@ -95,7 +98,7 @@ Base: `http://127.0.0.1:9820` (loopback by default; `--host` to change).
 | `GET /constants` | — | canonical master/voucher code tables as data |
 | `GET /classes` | — | registered `Busy*` ProgIDs |
 | `GET /surface[?member=M]` | — | IDispatch surface of the active `--prog-id` |
-| `POST /query` | `{"sql":"..."}` | SQL against the open company |
+| `POST /query` | `{"sql":"..."}` | SQL against the open company — **guarded**: read-only by default (see [Query safety](#query-safety-guarded-query)) |
 | `POST /call` | `{"method":"M","args":[...]}` | any COM method |
 | `GET /call?method=M&args=...` | `args` = URL-encoded JSON array | read-style calls, e.g. `args=%5Bfalse%5D` |
 | `POST /call?method=M&type=N[&modify=true]` | **raw XML body** (`Content-Type: application/xml`) | document writes; `type` is the master/voucher type code at `args[0]` |
@@ -117,6 +120,44 @@ Invoke-WebRequest "$base/query" -Method Post -Body '{"sql":"SELECT TOP 2 Code, N
 Invoke-WebRequest "$base/call?method=SaveMasterFromXML&type=2" -Method Post -Body $doc `
     -ContentType 'application/xml' -Headers @{Accept='application/xml'}
 # -> <Call method='SaveMasterFromXML'><Result>true</Result>...
+```
+
+## Query safety (guarded query)
+
+`query` and `POST /query` run SQL against the company database — the guard
+keeps a remote/agent-driven caller from treating that as an open door
+(issue #3):
+
+| flag | values | default |
+|---|---|---|
+| `--query-mode` | `full` — any SQL runs · `read-only` — a single `SELECT`/`WITH` statement only · `off` — the query facility refuses everything | `full` for CLI `query`, **`read-only` for `serve`** |
+| `--max-rows` | row cap on the response; `0` = unlimited | `10000` |
+
+- **Refusals use the standard error envelope** with the stable machine
+  code `"query_not_allowed"`: HTTP **403**, CLI exit **1**. `off` refuses
+  before the body is even parsed (the route is disabled, not broken).
+- `read-only` is **parser-light**: first keyword (`SELECT`/`WITH`, after
+  whitespace/comments) plus a statement-boundary scan — it rejects
+  `DELETE/UPDATE/DROP/EXEC/...` and multi-statement input like
+  `SELECT 1; DROP TABLE x`, while `SELECT ';'`, `-- comments` and a single
+  trailing `;` pass. This is a **guardrail, not a SQL firewall**: real
+  isolation means read-only database credentials.
+- **Capped responses** append `"truncated":true` (JSON) when rows were
+  dropped; uncapped responses keep the exact original shape. XML-mode
+  rowsets are capped too, but the legacy `SC=1` shape has no truncation
+  marker — JSON is the truncation-aware mode.
+- The boot line of `serve` reports the active policy:
+  `{"ok":true,...,"query_mode":"read-only","max_rows":10000}`.
+- **Scope**: the guard covers the query facility only. `call` / `POST
+  /call` stays the raw COM escape hatch by design (raw = keep, facade =
+  product — see [docs/roadmap.md](docs/roadmap.md)); remote exposure,
+  auth and multi-tenant policy are tracked in issue #4. The future MCP
+  server's query tool runs `read-only` unconditionally (issue #8).
+
+```powershell
+# refused everywhere except full mode:
+busy-bridge query --query-mode read-only --sql "DELETE FROM Master1"
+# {"ok":false,"code":"query_not_allowed","error":"read-only mode accepts only..."}
 ```
 
 ## Architecture

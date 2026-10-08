@@ -10,6 +10,7 @@
 //!   busy-bridge version | help
 //!
 //! Long options: --prog-id --busy --data --comp --sql --method --args --port --host
+//!              --query-mode (full|read-only|off) --max-rows (row cap; 0 = unlimited)
 //!
 //! This entry point only collects argv; command logic lives in commands.zig.
 const std = @import("std");

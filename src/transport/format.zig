@@ -501,6 +501,7 @@ test "xmlmeta classification is reachable from transport" {
 test "test aggregation for the build test root" {
     _ = @import("../util/xml.zig"); // facade pulls parse/write/map suites
     _ = @import("../util/helpers.zig");
+    _ = @import("../util/sqlguard.zig"); // issue #3 query guard corpus
     _ = @import("../core/registry.zig");
     _ = @import("../core/constants.zig");
     _ = @import("envelope.zig");

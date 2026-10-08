@@ -61,11 +61,12 @@ function Invoke-Http($url, $method, $accept, $bodyText, $contentType) {
     }
 }
 
-function Start-BridgeServe([int]$Port = 9820) {
+function Start-BridgeServe([int]$Port = 9820, [string[]]$Extra = @()) {
     $job = Start-Job -ScriptBlock {
-        param($exe, $comp, $port)
-        & $exe serve --comp $comp --port $port
-    } -ArgumentList $script:Bridge, $script:Comp, $Port
+        param($exe, $comp, $port, $extra)
+        if (-not $extra) { $extra = @() }
+        & $exe serve --comp $comp --port $port @extra
+    } -ArgumentList $script:Bridge, $script:Comp, $Port, $Extra
     for ($i = 0; $i -lt 20; $i++) {
         Start-Sleep -Milliseconds 500
         try {

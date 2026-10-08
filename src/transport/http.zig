@@ -10,6 +10,7 @@ const json = @import("../util/json.zig");
 const xml = @import("../util/xml.zig");
 const busyc = @import("../core/com.zig");
 const helpers = @import("../util/helpers.zig");
+const sqlguard = @import("../util/sqlguard.zig");
 const cli_mod = @import("cli.zig");
 const ops = @import("../core/ops.zig");
 const registry = @import("../core/registry.zig");
@@ -38,6 +39,10 @@ const ConnCtx = struct {
     sess: *busyc.Session,
     prog_id: []const u8,
     comp: ?[]const u8,
+    /// Query guard mode for POST /query (issue #3; serve default read-only).
+    query_mode: sqlguard.Mode,
+    /// Row cap for /query responses (0 = unlimited).
+    max_rows: usize,
 };
 
 const Route = struct {
@@ -156,6 +161,16 @@ fn badReq(alloc: Allocator, fmt: Format, machine: []const u8, msg: []const u8) R
     };
 }
 
+/// Guard refusal for POST /query (issue #3): the standard error envelope
+/// with the stable machine code `query_not_allowed`.
+fn denyQuery(alloc: Allocator, fmt: Format, msg: []const u8) Route {
+    return .{
+        .status = "403 Forbidden",
+        .content_type = ctOf(fmt),
+        .payload = errPayload(alloc, fmt, "403", "query_not_allowed", msg) catch unreachable,
+    };
+}
+
 fn route(
     ctx: ConnCtx,
     ralloc: Allocator,
@@ -220,6 +235,10 @@ fn route(
     }
 
     if (eql(verb, "POST") and eql(path, "/query")) {
+        // Guard first when the facility is off (issue #3): refuse before
+        // parsing the body — the route is disabled, not malformed.
+        if (ctx.query_mode == .off)
+            return denyQuery(ralloc, fmt, "query disabled by --query-mode off");
         const parsed = json.parse(ralloc, body) catch {
             return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
         };
@@ -229,12 +248,22 @@ fn route(
         if (sql_v.* != .str) {
             return badReq(ralloc, fmt, "bad_args", "\"sql\" must be a string");
         }
+        if (ctx.query_mode == .read_only) {
+            sqlguard.check(.read_only, sql_v.str) catch {
+                return denyQuery(ralloc, fmt, "read-only mode accepts only a single SELECT/WITH statement (no multi-statement SQL)");
+            };
+        }
         const rows = try ctx.sess.queryToJson(sql_v.str);
         var rows_mut = rows;
         defer rows_mut.deinit(ctx.sess.alloc);
         const payload = switch (fmt) {
-            .json => try okWrap(ralloc, "rows", &rows_mut),
-            .xml => try format.rowsXml(ralloc, &rows_mut),
+            .json => try envelope.rowsJson(ralloc, &rows_mut, ctx.max_rows),
+            .xml => blk: {
+                // Legacy SC=1 rowset carries no truncation marker — the cap
+                // still applies; JSON is the truncation-aware mode.
+                const view = envelope.rowView(&rows_mut, ctx.max_rows);
+                break :blk try format.rowsXml(ralloc, &view);
+            },
         };
         return .{ .status = "200 OK", .content_type = ctOf(fmt), .payload = payload };
     }
@@ -357,6 +386,18 @@ fn route(
 /// The `serve` command: open the session once, then accept loop.
 /// Response format is per-request (Accept header), not --out.
 pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
+    // Query guard flags (issue #3) parse first — fail fast, no COM needed.
+    const guard = cli_mod.guardFrom(cli, "read-only") catch |err| {
+        const msg = switch (err) {
+            error.BadQueryMode => "invalid --query-mode (use full, read-only, off)",
+            error.BadMaxRows => "invalid --max-rows (non-negative integer; 0 = unlimited)",
+        };
+        const t = envelope.errJsonText(alloc, "bad_args", msg) catch return 1;
+        defer alloc.free(t);
+        try printOut(io, alloc, t);
+        try printOut(io, alloc, "\n");
+        return 1;
+    };
     const o = optsFrom(cli) catch |err| {
         var cb: [64]u8 = undefined;
         const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
@@ -381,14 +422,22 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
     var server = try addr.listen(io, .{});
     defer server.deinit(io);
 
+    const mode_wire = if (guard.mode == .read_only) "read-only" else @tagName(guard.mode);
     const boot = try std.fmt.allocPrint(alloc,
-        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}"}}
+        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d}}}
         \\
-    , .{ host, port, o.prog_id, o.comp orelse "(none)" });
+    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows });
     defer alloc.free(boot);
     try printOut(io, alloc, boot);
 
-    const ctx = ConnCtx{ .io = io, .sess = &sess, .prog_id = o.prog_id, .comp = o.comp };
+    const ctx = ConnCtx{
+        .io = io,
+        .sess = &sess,
+        .prog_id = o.prog_id,
+        .comp = o.comp,
+        .query_mode = guard.mode,
+        .max_rows = guard.max_rows,
+    };
     while (true) {
         var stream = server.accept(io) catch |err| {
             std.debug.print("accept failed: {t}\n", .{err});
