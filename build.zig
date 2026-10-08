@@ -32,13 +32,19 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run busy-bridge");
     run_step.dependOn(&run_cmd.step);
 
-    // Unit tests: pure codec logic (util/xml), no COM. The test binary is
-    // x86-windows-gnu, so run this step on Windows (CI does).
+    // Unit tests: one root (src/main.zig) so the whole src/ tree is inside
+    // the module path; tests in transitively imported files all run
+    // (util/xml codec, util/helpers, core/xmlmeta, transport/format).
+    // The test binary is x86-windows-gnu, so run this step on Windows (CI).
     const test_mod = b.createModule(.{
-        .root_source_file = b.path("src/util/xml.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    test_mod.linkSystemLibrary("ole32", .{});
+    test_mod.linkSystemLibrary("oleaut32", .{});
+    test_mod.linkSystemLibrary("advapi32", .{});
+    test_mod.linkSystemLibrary("ws2_32", .{});
     const tests = b.addTest(.{ .root_module = test_mod });
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");

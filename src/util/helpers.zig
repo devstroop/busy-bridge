@@ -31,3 +31,46 @@ pub fn printOut(io: Io, alloc: Allocator, text: []const u8) !void {
     try w.interface.writeAll(text);
     try w.interface.flush();
 }
+
+/// Percent-decode a query-string value (`%XX` only; '+' stays literal —
+/// query components use %20 for spaces, not form encoding).
+pub fn urlDecode(alloc: Allocator, s: []const u8) ![]u8 {
+    if (std.mem.indexOfScalar(u8, s, '%') == null) return alloc.dupe(u8, s);
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var i: usize = 0;
+    while (i < s.len) {
+        if (s[i] == '%' and i + 2 < s.len) {
+            const hx = std.fmt.parseInt(u8, s[i + 1 .. i + 3], 16) catch {
+                try out.append(alloc, '%');
+                i += 1;
+                continue;
+            };
+            try out.append(alloc, hx);
+            i += 3;
+            continue;
+        }
+        try out.append(alloc, s[i]);
+        i += 1;
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+test "urlDecode" {
+    const testing = std.testing;
+    const a = try urlDecode(testing.allocator, "a%20b/c");
+    defer testing.allocator.free(a);
+    const b = try urlDecode(testing.allocator, "%5Bfalse%5D");
+    defer testing.allocator.free(b);
+    const c = try urlDecode(testing.allocator, "50%");
+    defer testing.allocator.free(c);
+    const d = try urlDecode(testing.allocator, "a+b");
+    defer testing.allocator.free(d);
+    const e = try urlDecode(testing.allocator, "plain");
+    defer testing.allocator.free(e);
+    try testing.expectEqualStrings("a b/c", a);
+    try testing.expectEqualStrings("[false]", b);
+    try testing.expectEqualStrings("50%", c); // bare % kept
+    try testing.expectEqualStrings("a+b", d); // '+' untouched
+    try testing.expectEqualStrings("plain", e);
+}

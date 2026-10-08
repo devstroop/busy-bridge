@@ -43,9 +43,21 @@ fn escapeInto(alloc: Allocator, out: *std.ArrayList(u8), s: []const u8, attr: bo
             '<' => try out.appendSlice(alloc, "&lt;"),
             '>' => try out.appendSlice(alloc, "&gt;"),
             '"' => try out.appendSlice(alloc, if (attr) "&quot;" else "\""),
+            '\'' => try out.appendSlice(alloc, if (attr) "&apos;" else "'"),
             else => try out.append(alloc, c),
         }
     }
+}
+
+/// Public escape helpers for envelope builders outside this module.
+/// Both quote styles are always escaped in attribute mode, so the output is
+/// safe inside single- or double-quoted attributes.
+pub fn escapeText(alloc: Allocator, out: *std.ArrayList(u8), s: []const u8) !void {
+    try escapeInto(alloc, out, s, false);
+}
+
+pub fn escapeAttr(alloc: Allocator, out: *std.ArrayList(u8), s: []const u8) !void {
+    try escapeInto(alloc, out, s, true);
 }
 
 // ---------------- tests ----------------
@@ -77,4 +89,11 @@ test "selfclosing and nesting" {
     defer doc.deinit(testing.allocator);
     try writeDocument(testing.allocator, &out, &doc);
     try testing.expectEqualStrings("<A><B /><C>t</C></A>", out.items);
+}
+
+test "apostrophe escaped in attributes for single-quoted consumers" {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    try escapeAttr(testing.allocator, &out, "it's a & <b> \"q\"");
+    try testing.expectEqualStrings("it&apos;s a &amp; &lt;b&gt; &quot;q&quot;", out.items);
 }

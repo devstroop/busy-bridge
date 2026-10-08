@@ -38,3 +38,10 @@ pub fn main(init: std.process.Init) !u8 {
 
     return commands.run(io, alloc, .{ .items = items });
 }
+
+// `zig build test` discovers tests only through test-block references.
+// Root may import transport only; transport/format.zig aggregates the rest
+// of the tree (core + util) from there.
+test {
+    _ = @import("transport/format.zig");
+}

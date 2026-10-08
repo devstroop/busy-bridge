@@ -22,6 +22,8 @@ pub const Usage =
     \\
     \\common options: --prog-id (default Busy2L21.CFixedInterface)
     \\                --busy (default C:\BusyWin\) --data (default C:\BusyWin\DATA\)
+    \\                --out json|xml: response format for data commands (default json;
+    \\                serve negotiates per-request via the Accept header instead)
     \\                --args-b64 / --sql-b64: base64-encoded value (use from PowerShell
     \\                5.1+ to avoid its double-quote mangling of native args)
     \\
