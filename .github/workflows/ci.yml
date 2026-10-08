@@ -77,6 +77,11 @@ jobs:
       - name: Build
         run: zig build
 
+      # Pure-codec unit tests (x86-windows test binary — runnable on Windows).
+      - name: Unit tests
+        if: runner.os == 'Windows'
+        run: zig build test
+
       # Run the real binary: version + registry enumeration (no BUSY needed).
       - name: Smoke test
         if: runner.os == 'Windows'

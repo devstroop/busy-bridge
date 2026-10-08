@@ -31,4 +31,16 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     const run_step = b.step("run", "Run busy-bridge");
     run_step.dependOn(&run_cmd.step);
+
+    // Unit tests: pure codec logic (util/xml), no COM. The test binary is
+    // x86-windows-gnu, so run this step on Windows (CI does).
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/util/xml.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const tests = b.addTest(.{ .root_module = test_mod });
+    const run_tests = b.addRunArtifact(tests);
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_tests.step);
 }
