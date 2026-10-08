@@ -1,2 +1,9 @@
 .zig-cache/
 zig-out/
+
+# IDE / build noise inside vendored examples
+*.suo
+*.user
+*.log
+*.exp
+*.lib

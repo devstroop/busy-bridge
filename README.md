@@ -140,6 +140,16 @@ Dependency direction is **enforced**: `scripts/check_layers.ps1` resolves
 every `@import` against the layer rules (`util→util`, `core→+core`,
 `transport→+transport`, `main→transport`) and fails the build in CI.
 
+## Documentation & examples
+
+- **[`docs/`](docs/)** — BUSY integration knowledge base, migrated from the
+  original 2017 Word/Excel document set and updated for Rel 14 (guides +
+  full [`docs/archive/`](docs/archive/) + generated
+  [`docs/function-reference.md`](docs/function-reference.md))
+- **[`examples/`](examples/)** — original sample scripts: VBScript reports
+  & validations (`.bcr`/`.bcd`), VB6 Internal AddOn, COM samples (VB6 /
+  VB.NET), legacy port-981 client
+
 ## Development
 
 ```powershell
@@ -152,13 +162,17 @@ powershell scripts/check_layers.ps1   # layer boundaries
 CI (GitHub Actions, ubuntu + windows): fmt → layer check → build → unit
 tests (Windows runner; test binary is x86-windows).
 
-Live-BUSY test scripts (require this machine's DEMO company, not CI):
+Live-BUSY tests (require BUSY + a company; **not** runnable in CI):
 
 ```powershell
-BUSY Research/write_roundtrip.ps1   # master create/read/delete (JSON)
-BUSY Research/serve_test.ps1        # HTTP endpoints (JSON defaults)
-BUSY Research/phase3_test.ps1       # 23 checks: both modes x both transports
+powershell -File tests/live/run-all.ps1      # all three suites
+powershell -File tests/live/01-roundtrip.ps1 # master create/read/delete (JSON)
+powershell -File tests/live/02-serve-defaults.ps1   # HTTP JSON defaults
+powershell -File tests/live/03-wire-modes.ps1       # both formats x both transports
 ```
+
+Shared harness in `tests/live/common.ps1` (bridge path auto-resolved from
+the repo; override with `$env:BUSY_BRIDGE_EXE` / `$env:BUSY_COMP`).
 
 ## Compatibility
 

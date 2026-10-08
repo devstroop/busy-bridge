@@ -1,0 +1,10 @@
+IBusyWin = 24, 22, 436, 342, C
+CommonLibrary = 132, 174, 599, 604, C
+GlobalConstants = 44, 44, 378, 364, C
+MainModule = 44, 44, 456, 364, C
+frmReport = 110, 110, 517, 430, C, 66, 66, 511, 386, C
+frmMain = 110, 110, 523, 430, C, 66, 66, 479, 386, C
+frmInputRepOpt = 132, 174, 599, 604, C, 88, 116, 671, 546, C
+frmInvVch = 66, 87, 636, 517, C, 44, 58, 614, 488, C
+frmAccMast = 75, 75, 643, 500, C, 25, 25, 593, 450, C
+frmAccVch = 75, 75, 657, 500, C, 125, 125, 749, 550, C
