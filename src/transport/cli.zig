@@ -21,6 +21,9 @@ pub const Usage =
     \\  busy-bridge surface [--prog-id P] [--member M] dump IDispatch surface as JSON
     \\  busy-bridge query --comp C --sql "SELECT ..."  query open company (opens via OpenDB)
     \\       [--query-mode full|read-only|off] [--max-rows N]   guard (default full, 10000)
+    \\  busy-bridge op <catalog|list|get>            ERP operations facade (normalized CRUD,
+    \\       e.g. op list accounts [--limit N] [--q X]          mechanical handling internal)
+    \\       e.g. op get voucher 1290 --comp C / op list vouchers --type sale
     \\  busy-bridge call --method M [--args '[..]']    invoke any COM method, JSON args,
     \\       [--prog-id P] [--comp C]                   {"$byref": v} marks out-params
     \\  busy-bridge serve [--port 9820] [--host H]     HTTP JSON API: GET /surface /classes

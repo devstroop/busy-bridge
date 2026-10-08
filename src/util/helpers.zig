@@ -103,3 +103,69 @@ test "errCode" {
     // issue #6: unrunnable SQL -> distinct machine code
     try testing.expectEqualStrings("no_recordset", errCode(error.NoRecordset, &b));
 }
+
+/// OLE Automation date (days since 1899-12-30) -> BUSY's display format
+/// "DD/MM/YYYY". Used for VT_DATE variants (facade M1: Tran1.Date). Uses
+/// Howard Hinnant's civil-from-days algorithm.
+pub fn oleDateToText(buf: []u8, ole: f64) ![]u8 {
+    const days_1970: i64 = @as(i64, @intFromFloat(@floor(ole))) - 25569;
+    const z: i64 = days_1970 + 719468;
+    const era: i64 = @divFloor(z, 146097);
+    const doe: i64 = z - era * 146097; // [0, 146096]
+    // all operands are non-negative for valid dates -> truncating division
+    const yoe: i64 = @divTrunc(doe - @divTrunc(doe, 1460) + @divTrunc(doe, 36524) - @divTrunc(doe, 146096), 365); // [0, 399]
+    const y: i64 = yoe + era * 400;
+    const doy: i64 = doe - (365 * yoe + @divTrunc(yoe, 4) - @divTrunc(yoe, 100)); // [0, 365]
+    const mp: i64 = @divTrunc(5 * doy + 2, 153); // [0, 11]
+    const d: i64 = doy - @divTrunc(153 * mp + 2, 5) + 1; // [1, 31]
+    const m: i64 = if (mp < 10) mp + 3 else mp - 9; // [1, 12]
+    const yy: i64 = if (m <= 2) y + 1 else y;
+    // NOTE: {d:0>2} zero-pads only for unsigned operands (signed positive
+    // values print "+1" on Zig 0.17) — cast the day/month fields.
+    return std.fmt.bufPrint(buf, "{d:0>2}/{d:0>2}/{d}", .{ @as(u64, @intCast(d)), @as(u64, @intCast(m)), yy });
+}
+
+test "oleDateToText" {
+    const testing = std.testing;
+    var b: [16]u8 = undefined;
+    try testing.expectEqualStrings("01/01/1970", try oleDateToText(&b, 25569.0));
+    try testing.expectEqualStrings("30/12/1899", try oleDateToText(&b, 0.0));
+    try testing.expectEqualStrings("08/10/2026", try oleDateToText(&b, 46303.0)); // 2026-10-08
+    // fractional time-of-day floors to the date
+    try testing.expectEqualStrings("08/10/2026", try oleDateToText(&b, 46303.75));
+}
+
+/// SQL string-literal body: single quotes doubled ('' escape). The caller
+/// wraps the result in quotes: `Name = '{s}'`. Owned — caller frees.
+pub fn sqlQuote(alloc: Allocator, s: []const u8) ![]u8 {
+    var extra: usize = 0;
+    for (s) |c| {
+        if (c == '\'') extra += 1;
+    }
+    var out = try alloc.alloc(u8, s.len + extra);
+    var i: usize = 0;
+    for (s) |c| {
+        out[i] = c;
+        i += 1;
+        if (c == '\'') {
+            out[i] = '\'';
+            i += 1;
+        }
+    }
+    return out;
+}
+
+test "sqlQuote" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    const plain = try sqlQuote(a, "Sundry Debtors");
+    defer a.free(plain);
+    try testing.expectEqualStrings("Sundry Debtors", plain);
+    const evil = try sqlQuote(a, "x'; DROP TABLE Master1; --");
+    defer a.free(evil);
+    // input contains one literal quote -> doubled by quoting
+    try testing.expectEqualStrings("x''; DROP TABLE Master1; --", evil);
+    const q = try sqlQuote(a, "it''s");
+    defer a.free(q);
+    try testing.expectEqualStrings("it''''s", q); // each ' doubles
+}

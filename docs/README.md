@@ -18,6 +18,7 @@ verified against a live installation (company DEMO) during the migration.
 | [Internal AddOns](internal-addons.md) | *Custom Data Entry Screen (using Internal AddOn).docx* | Preserved; sample in [`../examples/vb6-addon/`](../examples/vb6-addon/) |
 | [Database structure](database-structure.md) | *Database Structure of BUSY.doc* + 3 `.xls` | Updated: `.bds` storage model; full tables in archive |
 | [**Function reference**](function-reference.md) | *(replaces BUSY Functions.docx)* | **Generated from the live type library** — 4,496 members, 16 core classes |
+| [**Operations catalog**](operations.md) | *(new — busy-bridge facade)* | **Generated from `src/core/ops/catalog.zig`** — the normalized read surface |
 
 The wire contract (JSON/XML negotiation, envelopes, mapping rules) is
 specified in the repository [README](../README.md).

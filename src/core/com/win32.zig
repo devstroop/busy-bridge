@@ -41,6 +41,7 @@ pub const VT_I2: u16 = 2;
 pub const VT_I4: u16 = 3;
 pub const VT_R4: u16 = 4;
 pub const VT_R8: u16 = 5;
+pub const VT_DATE: u16 = 7;
 pub const VT_BSTR: u16 = 8;
 pub const VT_DISPATCH: u16 = 9;
 pub const VT_ERROR: u16 = 10;

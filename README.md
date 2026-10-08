@@ -160,6 +160,44 @@ busy-bridge query --query-mode read-only --sql "DELETE FROM Master1"
 # {"ok":false,"code":"query_not_allowed","error":"read-only mode accepts only..."}
 ```
 
+## Operations API
+
+The normalized, ERP-centric **read** surface (facade M1, issue #7) —
+business keys in, codes + names out, all COM/XML mechanics internal. Raw
+`call`/`query` remain untouched as the escape hatch.
+
+| | |
+|---|---|
+| CLI | `busy-bridge op catalog` · `op list accounts\|items\|vouchers [--limit N] [--q X] [--type NAME]` · `op get account\|item <name>` / `op get voucher <code>` |
+| HTTP | `GET /op` (catalog) · `/op/accounts[?limit=&q=]` `/op/account?name=` · `/op/items[?limit=&q=]` `/op/item?name=` · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` |
+
+- **Envelopes** (both formats, both transports): JSON
+  `{"ok":true,"op":"list-accounts","result":{…}}` — same shape as
+  `call`; XML `<Op><name>…</name><result>…</result></Op>` via
+  `--out xml` / `Accept: application/xml`.
+- **Normalized rows**: list ops return `{code, name,
+  parent:{code,name}}` (parent/group names batch-resolved), vouchers add
+  `type:{code,name}` (constants table), `series`/`party` (Master1
+  lookups) and `date` in ISO `YYYY-MM-DD`. Fetch ops add `doc` — the
+  full BUSY document as a JSON tree, never an XML blob.
+- **Parameters**: `limit` (default 100, `0` = unlimited, response gets
+  `"truncated":true` when capped), `q` = case-insensitive name substring
+  (client-side — BUSY's `LIKE` silently returns empty), `type` =
+  canonical voucher name (`sale`, case-insensitive), `name` = exact
+  business key, `code` = integer VchCode.
+- **Errors**: `not_found` (HTTP 404 / exit 1) and `bad_args` (400 / 1)
+  with session-level messages; unknown voucher types point at
+  `GET /constants`.
+- **Catalog**: [docs/operations.md](docs/operations.md) — generated from
+  the single source table in `src/core/ops/catalog.zig` by
+  `scripts/docs/generate-ops-doc.ps1` (same table serves `op catalog`
+  and `GET /op`).
+
+Status: **M1 (reads) shipped** — M2 (writes: create/update master, post
+voucher with structured errors + `BeginTran` batches) and M3 (named
+reports) follow per [issue #7](https://github.com/devstroop/busy-bridge/issues/7)
+and [the RFC](docs/erp-operations-layer.md).
+
 ## Architecture
 
 ```text

@@ -73,4 +73,7 @@ structured error mapping. The XML codec from Phase 2 does the heavy lifting.
 
 ## Status
 
-Not implemented — this document is the approved plan for the next phase.
+**M1 (reads) implemented** — `core/ops/{masters,vouchers,catalog}.zig`
+behind `busy-bridge op …` and `GET /op/*` (README “Operations API”,
+[catalog](operations.md), live suite `tests/live/06-ops-reads.ps1`).
+M2 (writes) and M3 (reports) next — tracked in issue #7.

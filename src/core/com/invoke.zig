@@ -2,6 +2,7 @@
 //! result/out-param values back to JSON.
 const std = @import("std");
 const json = @import("../../util/json.zig");
+const helpers = @import("../../util/helpers.zig");
 const Session = @import("session.zig").Session;
 const win32 = @import("win32.zig");
 const utf16 = @import("utf16.zig");
@@ -21,6 +22,7 @@ const VT_I2 = win32.VT_I2;
 const VT_I4 = win32.VT_I4;
 const VT_R4 = win32.VT_R4;
 const VT_R8 = win32.VT_R8;
+const VT_DATE = win32.VT_DATE;
 const VT_BSTR = win32.VT_BSTR;
 const VT_DISPATCH = win32.VT_DISPATCH;
 const VT_ERROR = win32.VT_ERROR;
@@ -201,6 +203,12 @@ pub fn valueFromVariant(self: *Session, vv: *const VARIANT) !json.Value {
         VT_I8 => return .{ .int = vv.data.llVal },
         VT_R4 => return .{ .float = @as(*align(1) const f32, @ptrCast(&vv.data.llVal)).* },
         VT_R8 => return .{ .float = vv.data.dblVal },
+        // OLE date (Tran1.Date etc.) — was silently .null before M1;
+        // BUSY's display format is DD/MM/YYYY.
+        VT_DATE => {
+            var b: [16]u8 = undefined;
+            return .{ .str = try self.alloc.dupe(u8, try helpers.oleDateToText(&b, vv.data.dblVal)) };
+        },
         VT_BOOL => return .{ .bool = vv.data.boolVal != 0 },
         VT_BSTR => {
             const b = vv.data.bstrVal orelse return .null;

@@ -1,8 +1,18 @@
 //! COM orchestration shared by CLI commands and HTTP routes:
 //! open a company session, serialize a session's surface to JSON text.
+//!
+//! Facade (issue #7, RFC docs/erp-operations-layer.md): the ERP-level
+//! operations live in `ops/` beneath this barrel — normalized reads with
+//! mechanical internals (constants -> SQL/XML codec -> Save*/Get*XML).
+//! Raw `call`/`query` stay available as the escape hatch.
 const std = @import("std");
 const json = @import("../util/json.zig");
 const busyc = @import("com.zig");
+
+pub const masters = @import("ops/masters.zig");
+pub const vouchers = @import("ops/vouchers.zig");
+pub const common = @import("ops/common.zig");
+pub const catalog = @import("ops/catalog.zig");
 
 const Allocator = std.mem.Allocator;
 

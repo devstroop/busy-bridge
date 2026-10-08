@@ -69,6 +69,7 @@ pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
     if (eql(cmd, "classes")) return cmdClasses(io, alloc, fmt);
     if (eql(cmd, "surface")) return cmdSurface(io, alloc, cli, fmt);
     if (eql(cmd, "query")) return cmdQuery(io, alloc, cli, fmt);
+    if (eql(cmd, "op")) return cmdOp(io, alloc, cli, fmt); // ERP facade (issue #7)
     if (eql(cmd, "call")) return cmdCall(io, alloc, cli, fmt);
     if (eql(cmd, "serve")) return http.serve(io, alloc, cli); // Accept-negotiated
 
@@ -245,6 +246,130 @@ fn cmdQuery(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     try printOut(io, alloc, out_text);
     try printOut(io, alloc, "\n");
     return if (ok) 0 else 1;
+}
+
+/// `busy-bridge op ...` — ERP operations facade (issue #7): normalized
+/// reads with mechanical internals; raw `call`/`query` remain the escape
+/// hatch. Positionals: `catalog`, `list <accounts|items|vouchers>`,
+/// `get <account|item|voucher> <key>`; flags: --limit --q --type.
+fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
+    // positional words (skip flags + their values)
+    var pos: std.ArrayList([]const u8) = .empty;
+    defer pos.deinit(alloc);
+    {
+        var i: usize = 1;
+        while (i < cli.items.len) : (i += 1) {
+            const it = cli.items[i];
+            if (it.len >= 2 and it[0] == '-' and it[1] == '-') {
+                i += 1; // flag + value
+                continue;
+            }
+            try pos.append(alloc, it);
+        }
+    }
+    if (pos.items.len == 0)
+        return fail(io, alloc, fmt, "bad_args", "usage: busy-bridge op <catalog | list <accounts|items|vouchers> [--limit N] [--q X] [--type NAME] | get <account|item|voucher> <key>>");
+
+    const verb = pos.items[0];
+    if (eql(verb, "catalog")) {
+        // plain text like version/help — docs generation reads it raw
+        const md = try ops.catalog.markdown(alloc);
+        defer alloc.free(md);
+        try printOut(io, alloc, md);
+        return 0;
+    }
+
+    const limit: usize = blk: {
+        const raw = cli.get("--limit") orelse break :blk 100;
+        break :blk std.fmt.parseInt(usize, raw, 10) catch {
+            return fail(io, alloc, fmt, "bad_args", "invalid --limit (non-negative integer; 0 = unlimited)");
+        };
+    };
+
+    // validate everything BEFORE touching COM
+    const OpKind = enum { list_accounts, list_items, list_vouchers, get_account, get_item, get_voucher };
+    var opk: OpKind = undefined;
+    var key: []const u8 = "";
+    var key_int: i64 = 0;
+    if (eql(verb, "list")) {
+        if (pos.items.len < 2)
+            return fail(io, alloc, fmt, "bad_args", "op list needs a kind: accounts | items | vouchers");
+        const k = pos.items[1];
+        if (eql(k, "accounts")) opk = .list_accounts else if (eql(k, "items")) opk = .list_items else if (eql(k, "vouchers")) opk = .list_vouchers else return fail(io, alloc, fmt, "bad_args", "unknown list kind (use accounts, items or vouchers)");
+    } else if (eql(verb, "get")) {
+        if (pos.items.len < 3)
+            return fail(io, alloc, fmt, "bad_args", "op get needs a kind and a key: account|item <name> | voucher <code>");
+        const k = pos.items[1];
+        key = pos.items[2];
+        if (eql(k, "account")) {
+            opk = .get_account;
+        } else if (eql(k, "item")) {
+            opk = .get_item;
+        } else if (eql(k, "voucher")) {
+            opk = .get_voucher;
+            key_int = std.fmt.parseInt(i64, key, 10) catch
+                return fail(io, alloc, fmt, "bad_args", "voucher key must be an integer VchCode");
+        } else {
+            return fail(io, alloc, fmt, "bad_args", "unknown get kind (use account, item or voucher)");
+        }
+    } else {
+        return fail(io, alloc, fmt, "bad_args", "unknown op verb (use catalog, list or get)");
+    }
+    const op_name: []const u8 = switch (opk) {
+        .list_accounts => "list-accounts",
+        .list_items => "list-items",
+        .list_vouchers => "list-vouchers",
+        .get_account => "get-account",
+        .get_item => "get-item",
+        .get_voucher => "get-voucher",
+    };
+
+    const o = optsFrom(cli) catch |err| {
+        var cb: [64]u8 = undefined;
+        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
+        const m = if (err == error.NoBusyProgId)
+            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
+        else
+            @errorName(err);
+        return fail(io, alloc, fmt, mach, m);
+    };
+    var sess = try busyc.Session.init(alloc);
+    defer sess.deinit();
+    openSession(&sess, o) catch |err| {
+        var cb: [64]u8 = undefined;
+        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
+    };
+
+    const result = switch (opk) {
+        .list_accounts => ops.masters.list(&sess, alloc, .account, .{ .limit = limit, .q = cli.get("--q") }),
+        .list_items => ops.masters.list(&sess, alloc, .item, .{ .limit = limit, .q = cli.get("--q") }),
+        .list_vouchers => ops.vouchers.list(&sess, alloc, .{ .type_name = cli.get("--type"), .limit = limit }),
+        .get_account => ops.masters.get(&sess, alloc, .account, key),
+        .get_item => ops.masters.get(&sess, alloc, .item, key),
+        .get_voucher => ops.vouchers.get(&sess, alloc, key_int),
+    } catch |err| {
+        var cb: [64]u8 = undefined;
+        const mach = if (err == error.NotFound)
+            "not_found"
+        else if (err == error.BadArgs)
+            "bad_args"
+        else
+            helpers.errCode(err, &cb);
+        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+        return fail(io, alloc, fmt, mach, msg);
+    };
+    var res = result;
+    defer res.deinit(alloc);
+
+    const out_text = switch (fmt) {
+        .json => try envelope.opJson(alloc, op_name, &res),
+        .xml => try envelope.opXml(alloc, op_name, &res),
+    };
+    defer alloc.free(out_text);
+    try printOut(io, alloc, out_text);
+    try printOut(io, alloc, "\n");
+    return 0;
 }
 
 fn cmdCall(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {

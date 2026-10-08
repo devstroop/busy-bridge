@@ -2,6 +2,7 @@
 //! HTTP transports. These formats are protocol concerns, not domain data.
 const std = @import("std");
 const json = @import("../util/json.zig");
+const xml_mod = @import("../util/xml.zig");
 const helpers = @import("../util/helpers.zig");
 
 const Allocator = std.mem.Allocator;
@@ -82,6 +83,78 @@ pub fn rowsJson(alloc: Allocator, rows: *const json.Value, cap: usize) ![]u8 {
     }
     try w.raw("}");
     return out.toOwnedSlice(alloc);
+}
+
+/// Operations facade, JSON mode (issue #7):
+/// `{"ok":true,"op":"list-accounts","result":{...}}` — mirrors the raw
+/// `call` envelope shape (result lives at `.result`).
+pub fn opJson(alloc: Allocator, op_name: []const u8, v: *const json.Value) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var w = json.Writer{ .buf = &out, .alloc = alloc };
+    try w.raw("{\"ok\":true,\"op\":");
+    try w.str(op_name);
+    try w.raw(",\"result\":");
+    try json.stringify(v, &w);
+    try w.raw("}");
+    return out.toOwnedSlice(alloc);
+}
+
+/// Operations facade, XML mode: single-root `<Op><name>…</name><
+/// result>…</result></Op>` through the standard JSON→XML mapping
+/// (util/xml copies all content, so `v` stays caller-owned).
+pub fn opXml(alloc: Allocator, op_name: []const u8, v: *const json.Value) ![]u8 {
+    const name_key = try alloc.dupe(u8, "name");
+    errdefer alloc.free(name_key);
+    const name_val = try alloc.dupe(u8, op_name);
+    errdefer alloc.free(name_val);
+    const res_key = try alloc.dupe(u8, "result");
+    errdefer alloc.free(res_key);
+    const root_key = try alloc.dupe(u8, "Op");
+    errdefer alloc.free(root_key);
+
+    // `result` entry BORROWS v (fromJson copies; we never free it here)
+    var inner = [_]json.Value.Entry{
+        .{ .key = name_key, .val = .{ .str = name_val } },
+        .{ .key = res_key, .val = v.* },
+    };
+    var root = [_]json.Value.Entry{
+        .{ .key = root_key, .val = .{ .obj = &inner } },
+    };
+    const wrapper = json.Value{ .obj = &root };
+
+    var el = try xml_mod.fromJson(alloc, &wrapper);
+    defer el.deinit(alloc); // frees Element's own copies
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(alloc);
+    try xml_mod.writeElement(alloc, &out, &el);
+    // wrapper/inner keys and name_val were ours; `v` and Element copies are not
+    alloc.free(name_key);
+    alloc.free(name_val);
+    alloc.free(res_key);
+    alloc.free(root_key);
+    return out.toOwnedSlice(alloc);
+}
+
+test "op envelopes render both formats" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    var v = try json.parse(a,
+        \\{"kind":"account","count":1,"items":[{"code":116,"name":"Sundry Debtors"}]}
+    );
+    defer v.deinit(a);
+
+    const j = try opJson(a, "list-accounts", &v);
+    defer a.free(j);
+    try testing.expect(std.mem.startsWith(u8, j, "{\"ok\":true,\"op\":\"list-accounts\",\"result\":{"));
+
+    const x = try opXml(a, "list-accounts", &v);
+    defer a.free(x);
+    try testing.expect(std.mem.startsWith(u8, x, "<Op><name>list-accounts</name><result>"));
+    try testing.expect(std.mem.indexOf(u8, x, "<name>Sundry Debtors</name>") != null);
+    try testing.expect(std.mem.endsWith(u8, x, "</result></Op>"));
+    // borrow held: v still intact after opXml
+    try testing.expectEqual(@as(i64, 116), v.get("items").?.arr[0].get("code").?.int);
 }
 
 test "rowsJson row cap + truncated flag" {

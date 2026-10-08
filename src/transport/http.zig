@@ -171,6 +171,28 @@ fn denyQuery(alloc: Allocator, fmt: Format, msg: []const u8) Route {
     };
 }
 
+/// Operations facade success (issue #7): `{"ok":true,"op":…,"result":…}`
+/// or `<Op><name>…</name><result>…</result></Op>` — same envelope as the
+/// CLI `op` command.
+fn opOk(alloc: Allocator, fmt: Format, op_name: []const u8, v: *const json.Value) !Route {
+    const payload = switch (fmt) {
+        .json => try envelope.opJson(alloc, op_name, v),
+        .xml => try envelope.opXml(alloc, op_name, v),
+    };
+    return .{ .status = "200 OK", .content_type = ctOf(fmt), .payload = payload };
+}
+
+/// Map operation errors to routes: NotFound -> 404, BadArgs -> 400;
+/// anything else stays `null` so the caller propagates (-> 500 path).
+fn opErr(alloc: Allocator, fmt: Format, sess: *busyc.Session, err: anyerror) !?Route {
+    const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+    if (err == error.NotFound)
+        return .{ .status = "404 Not Found", .content_type = ctOf(fmt), .payload = try errPayload(alloc, fmt, "404", "not_found", msg) };
+    if (err == error.BadArgs)
+        return .{ .status = "400 Bad Request", .content_type = ctOf(fmt), .payload = try errPayload(alloc, fmt, "400", "bad_args", msg) };
+    return null;
+}
+
 fn route(
     ctx: ConnCtx,
     ralloc: Allocator,
@@ -232,6 +254,76 @@ fn route(
         if (fmt == .xml)
             return .{ .status = "200 OK", .content_type = xct, .payload = try format.constantsXml(ralloc) };
         return .{ .status = "200 OK", .content_type = jct, .payload = try format.constantsJson(ralloc) };
+    }
+
+    // ---- operations facade (issue #7): normalized reads over raw COM ----
+    if (eql(verb, "GET") and eql(path, "/op")) {
+        var ops_arr: std.ArrayList(json.Value) = .empty;
+        for (ops.catalog.all) |opn| {
+            var e: std.ArrayList(json.Value.Entry) = .empty;
+            try ops.common.put(ralloc, &e, "name", .{ .str = try ralloc.dupe(u8, opn.name) });
+            try ops.common.put(ralloc, &e, "route", .{ .str = try ralloc.dupe(u8, opn.route) });
+            try ops.common.put(ralloc, &e, "cli", .{ .str = try ralloc.dupe(u8, opn.cli) });
+            try ops.common.put(ralloc, &e, "params", .{ .str = try ralloc.dupe(u8, opn.params) });
+            try ops.common.put(ralloc, &e, "summary", .{ .str = try ralloc.dupe(u8, opn.summary) });
+            try ops_arr.append(ralloc, try ops.common.objFrom(ralloc, &e));
+        }
+        var result: std.ArrayList(json.Value.Entry) = .empty;
+        try ops.common.put(ralloc, &result, "operations", .{ .arr = try ops_arr.toOwnedSlice(ralloc) });
+        const v = try ops.common.objFrom(ralloc, &result);
+        return opOk(ralloc, fmt, "catalog", &v);
+    }
+    if (eql(verb, "GET") and eql(path, "/op/accounts") or (eql(verb, "GET") and eql(path, "/op/items"))) {
+        const kind: ops.masters.Kind = if (eql(path, "/op/accounts")) .account else .item;
+        const limit = blk: {
+            if (try qparam(ralloc, query, "limit")) |raw|
+                break :blk std.fmt.parseInt(usize, raw, 10) catch
+                    return badReq(ralloc, fmt, "bad_args", "invalid limit (non-negative integer; 0 = unlimited)");
+            break :blk @as(usize, 100);
+        };
+        const q = try qparam(ralloc, query, "q");
+        const v = ops.masters.list(ctx.sess, ralloc, kind, .{ .limit = limit, .q = q }) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        const name = if (kind == .account) "list-accounts" else "list-items";
+        return opOk(ralloc, fmt, name, &v);
+    }
+    if (eql(verb, "GET") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
+        const kind: ops.masters.Kind = if (eql(path, "/op/account")) .account else .item;
+        const raw_name = (try qparam(ralloc, query, "name")) orelse
+            return badReq(ralloc, fmt, "bad_args", "missing \"name\" (exact business name)");
+        const v = ops.masters.get(ctx.sess, ralloc, kind, raw_name) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        const name = if (kind == .account) "get-account" else "get-item";
+        return opOk(ralloc, fmt, name, &v);
+    }
+    if (eql(verb, "GET") and eql(path, "/op/vouchers")) {
+        const limit = blk: {
+            if (try qparam(ralloc, query, "limit")) |raw|
+                break :blk std.fmt.parseInt(usize, raw, 10) catch
+                    return badReq(ralloc, fmt, "bad_args", "invalid limit (non-negative integer; 0 = unlimited)");
+            break :blk @as(usize, 100);
+        };
+        const type_name = try qparam(ralloc, query, "type");
+        const v = ops.vouchers.list(ctx.sess, ralloc, .{ .type_name = type_name, .limit = limit }) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, "list-vouchers", &v);
+    }
+    if (eql(verb, "GET") and eql(path, "/op/voucher")) {
+        const raw_code = (try qparam(ralloc, query, "code")) orelse
+            return badReq(ralloc, fmt, "bad_args", "missing \"code\" (integer VchCode)");
+        const code = std.fmt.parseInt(i64, raw_code, 10) catch
+            return badReq(ralloc, fmt, "bad_args", "invalid \"code\" (integer VchCode)");
+        const v = ops.vouchers.get(ctx.sess, ralloc, code) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, "get-voucher", &v);
     }
 
     if (eql(verb, "POST") and eql(path, "/query")) {
@@ -379,7 +471,7 @@ fn route(
     return .{
         .status = "404 Not Found",
         .content_type = ctOf(fmt),
-        .payload = try errPayload(ralloc, fmt, "404", "not_found", "unknown route (see /health /info /constants /surface /classes /query /call)"),
+        .payload = try errPayload(ralloc, fmt, "404", "not_found", "unknown route (see /health /info /constants /surface /classes /query /call /op)"),
     };
 }
 

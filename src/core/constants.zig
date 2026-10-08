@@ -72,12 +72,23 @@ pub const vouchers = [_]NamedCode{
 };
 
 pub fn masterCode(name: []const u8) ?i64 {
-    for (masters) |m| if (std.mem.eql(u8, m.name, name)) return m.code;
+    for (masters) |m| if (std.ascii.eqlIgnoreCase(m.name, name)) return m.code;
     return null;
 }
 
 pub fn voucherCode(name: []const u8) ?i64 {
-    for (vouchers) |v| if (std.mem.eql(u8, v.name, name)) return v.code;
+    for (vouchers) |v| if (std.ascii.eqlIgnoreCase(v.name, name)) return v.code;
+    return null;
+}
+
+/// Reverse lookups (facade M1: wire codes back to canonical names).
+pub fn masterName(code: i64) ?[]const u8 {
+    for (masters) |m| if (m.code == code) return m.name;
+    return null;
+}
+
+pub fn voucherName(code: i64) ?[]const u8 {
+    for (vouchers) |v| if (v.code == code) return v.name;
     return null;
 }
 
@@ -89,4 +100,11 @@ test "constants lookup" {
     try testing.expectEqual(@as(i64, 9), voucherCode("SALE").?);
     try testing.expectEqual(@as(i64, 2), voucherCode("PURCHASE").?);
     try testing.expect(voucherCode("SALES") == null);
+    // facade M1: case-insensitive input, exact reverse output
+    try testing.expectEqual(@as(i64, 9), voucherCode("sale").?);
+    try testing.expectEqual(@as(i64, 6), masterCode("item_master").?);
+    try testing.expectEqualStrings("SALE", voucherName(9).?);
+    try testing.expectEqualStrings("ACCOUNT_MASTER", masterName(2).?);
+    try testing.expect(voucherName(99) == null);
+    try testing.expect(masterName(99) == null);
 }
