@@ -421,6 +421,31 @@ fn route(
         return opOk(ralloc, fmt, "batch", &v);
     }
 
+    // ---- M3 named reports (issue #7): GET /op/report/<name>?params ----
+    if (eql(verb, "GET") and std.mem.startsWith(u8, path, "/op/report/")) {
+        const report = path["/op/report/".len..];
+        if (report.len == 0)
+            return badReq(ralloc, fmt, "bad_args", "missing report name (see GET /op)");
+        var entries: std.ArrayList(json.Value.Entry) = .empty;
+        const str_params = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q" };
+        for (str_params) |p| {
+            if (try qparam(ralloc, query, p)) |v| try ops.common.put(ralloc, &entries, p, .{ .str = v });
+        }
+        if (try qparam(ralloc, query, "limit")) |raw| {
+            const n = std.fmt.parseInt(i64, raw, 10) catch {
+                entries.deinit(ralloc);
+                return badReq(ralloc, fmt, "bad_args", "invalid limit (non-negative integer; 0 = unlimited)");
+            };
+            try ops.common.put(ralloc, &entries, "limit", .{ .int = n });
+        }
+        const args_v = try ops.common.objFrom(ralloc, &entries);
+        const v = ops.reports.run(ctx.sess, ralloc, report, &args_v) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, report, &v);
+    }
+
     if (eql(verb, "POST") and eql(path, "/query")) {
         // Guard first when the facility is off (issue #3): refuse before
         // parsing the body — the route is disabled, not malformed.

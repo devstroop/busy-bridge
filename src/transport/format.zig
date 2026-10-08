@@ -214,7 +214,7 @@ pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp
     try w.str(prog_id);
     try w.raw(",\"company\":");
     if (comp) |c| try w.str(c) else try w.raw("null");
-    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\"]}");
+    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\",\"/op/report\"]}");
     return out.toOwnedSlice(alloc);
 }
 
@@ -227,7 +227,7 @@ pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp:
     try xml_write.escapeAttr(alloc, &out, prog_id);
     try out.appendSlice(alloc, "' company='");
     if (comp) |c| try xml_write.escapeAttr(alloc, &out, c);
-    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/></Info>");
+    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/><Route path='/op/report'/></Info>");
     return out.toOwnedSlice(alloc);
 }
 

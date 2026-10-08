@@ -129,6 +129,36 @@ pub const all = [_]Op{
         .params = "array of {op, args} write entries",
         .summary = "run write ops inside BeginTran/CommitTran; any failure rolls back all (code: batch_rolled_back)",
     },
+    // ---- M3 reports (issue #7): named operations over the balance /
+    // ---- stock report methods (typed out-params probe-verified) ----
+    .{
+        .name = "account-balance",
+        .route = "GET /op/report/account-balance",
+        .cli = "op report account-balance --name X --from D --to D",
+        .params = "name (account), from, to (YYYY-MM-DD)",
+        .summary = "single account opening/closing balance for a period",
+    },
+    .{
+        .name = "group-balance",
+        .route = "GET /op/report/group-balance",
+        .cli = "op report group-balance --group X --from D --to D",
+        .params = "group (account group), from, to",
+        .summary = "group incl. children: opening, debit, credit movement",
+    },
+    .{
+        .name = "trial-balance",
+        .route = "GET /op/report/trial-balance",
+        .cli = "op report trial-balance --from D --to D",
+        .params = "from, to",
+        .summary = "every root account group + book totals (dr == -cr when balanced; BUSY's debit column is signed)",
+    },
+    .{
+        .name = "stock-status",
+        .route = "GET /op/report/stock-status",
+        .cli = "op report stock-status --date D [--item X] [--q F]",
+        .params = "date, item? (exact), q? (substring), limit (default 100, 0 = unlimited)",
+        .summary = "per-item main/alt quantity on hand at a date (GetItemValue)",
+    },
 };
 
 pub fn find(name: []const u8) ?*const Op {
@@ -167,7 +197,7 @@ pub fn markdown(alloc: Allocator) ![]u8 {
 const testing = std.testing;
 
 test "catalog is well-formed" {
-    try testing.expect(all.len >= 16);
+    try testing.expect(all.len >= 20);
     for (&all) |*op| {
         try testing.expect(op.name.len > 0);
         try testing.expect(std.mem.indexOf(u8, op.route, "/op") != null);

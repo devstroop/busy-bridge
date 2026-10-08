@@ -172,6 +172,8 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
 | CLI (writes) | `op create\|update <account\|item> <name> --json '{..}'` · `op delete <account\|item> <name>` / `op delete voucher <code>` · `op post --json '{..}'` · `op batch --json '[..]'` (`--json-b64` for PowerShell) |
 | HTTP (reads) | `GET /op` (catalog) · `/op/accounts[?limit=&q=]` `/op/account?name=` · `/op/items[?limit=&q=]` `/op/item?name=` · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` |
 | HTTP (writes) | `POST /op/account` · `PUT /op/account?name=` · `DELETE /op/account?name=` (item routes identical) · `POST /op/voucher` · `DELETE /op/voucher?code=` · `POST /op/batch` |
+| Reports (CLI) | `op report account-balance --name X --from D --to D` · `op report group-balance --group X --from D --to D` · `op report trial-balance --from D --to D` · `op report stock-status --date D [--item X] [--q F] [--limit N]` |
+| Reports (HTTP) | `GET /op/report/{account-balance,group-balance,trial-balance,stock-status}` with the same names as query params |
 
 - **Envelopes** (both formats, both transports): JSON
   `{"ok":true,"op":"list-accounts","result":{…}}` — same shape as
@@ -206,15 +208,27 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
   session — services classes share in-process state, probe-verified).
   Any failure calls `RollBackTran` and reports `op[N] '<op>': <reason>`;
   read ops are rejected as batch entries.
+- **Named reports (M3)** run BUSY's own balance/stock report methods:
+  account opening/closing, group movement, a trial balance over all
+  root groups (`ParentGrp = 0`), and per-item stock at a date
+  (`GetItemValue`). They use the extended arg markers —
+  `{"$date":"YYYY-MM-DD"}` (VT_DATE input) and
+  `{"$byref":"f8"|"i4"|"cy"|"i8"}` (typed out-param boxes for VB6
+  `As Double/Long/Currency` params — plain `{"$byref":""}` still covers
+  `As Variant`). Balance reports reach **CMasterServices** through a
+  transient session automatically. Live-verified: a posted journal
+  moves the numbers, `trial-balance` totals satisfy `dr == -cr`
+  (BUSY's debit column is signed), and everything returns to zero
+  after delete.
 - **Catalog**: [docs/operations.md](docs/operations.md) — generated from
   the single source table in `src/core/ops/catalog.zig` by
   `scripts/docs/generate-ops-doc.ps1` (same table serves `op catalog`
   and `GET /op`).
 
-Status: **M1 (reads) + M2 (writes: master CRUD, voucher posts, batch
-transactions) shipped** — M3 (named reports) follows per
-[issue #7](https://github.com/devstroop/busy-bridge/issues/7)
-and [the RFC](docs/erp-operations-layer.md).
+Status: **M1 (reads) + M2 (writes) + M3 (reports) shipped — the RFC
+milestones are complete** (issue #7). See
+[issue #7](https://github.com/devstroop/busy-bridge/issues/7) and
+[the RFC](docs/erp-operations-layer.md) for the design record.
 
 ## Architecture
 

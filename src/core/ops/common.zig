@@ -5,6 +5,7 @@
 const std = @import("std");
 const json = @import("../../util/json.zig");
 const helpers = @import("../../util/helpers.zig");
+const registry = @import("../registry.zig");
 const Session = @import("../com.zig").Session;
 
 const Allocator = std.mem.Allocator;
@@ -205,9 +206,45 @@ pub fn resolveNames(sess: *Session, alloc: Allocator, codes: []const i64) ![]Nam
     return out.toOwnedSlice(alloc);
 }
 
+/// `Busy2L21.CFixedInterface` + class name -> `Busy2L21.<class>` (same
+/// generation from the registry scan). Owned — caller frees.
+pub fn classProgId(alloc: Allocator, class_name: []const u8) ![]u8 {
+    const fi = registry.newestFixedInterface() orelse return error.NoBusyProgId;
+    const i = std.mem.indexOf(u8, fi, "CFixedInterface") orelse return error.NoBusyProgId;
+    return std.fmt.allocPrint(alloc, "{s}{s}", .{ fi[0..i], class_name });
+}
+
+test "classProgId derives sibling service classes" {
+    const a = testing.allocator;
+    if (registry.newestFixedInterface()) |_| {
+        const p = try classProgId(a, "CMasterServices");
+        defer a.free(p);
+        try testing.expect(std.mem.endsWith(u8, p, "CMasterServices"));
+        try testing.expect(std.mem.indexOf(u8, p, "CFixedInterface") == null);
+    }
+}
+
 pub fn findName(pairs: []const NamePair, code: i64) ?[]const u8 {
     for (pairs) |p| if (p.code == code) return p.name;
     return null;
+}
+
+/// Resolve a master's Code by type + exact name (owned result, null when
+/// missing). Single query — reports use it before their service calls.
+pub fn codeByName(sess: *Session, alloc: Allocator, master_type: i64, name: []const u8) !?i64 {
+    const quoted = try helpers.sqlQuote(alloc, name);
+    defer alloc.free(quoted);
+    const sql = try std.fmt.allocPrint(alloc, "SELECT TOP 1 Code FROM Master1 WHERE MasterType = {d} AND Name = '{s}'", .{ master_type, quoted });
+    defer alloc.free(sql);
+    const rows = try sess.queryToJson(sql);
+    defer {
+        var t = rows;
+        t.deinit(sess.alloc);
+    }
+    if (rows != .arr or rows.arr.len == 0) return null;
+    const v = (rows.arr[0].get("Code") orelse return null).*;
+    if (v != .int) return null;
+    return v.int;
 }
 
 pub fn freePairs(alloc: Allocator, pairs: []NamePair) void {

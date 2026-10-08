@@ -15,6 +15,7 @@ pub const vouchers = @import("ops/vouchers.zig");
 pub const common = @import("ops/common.zig");
 pub const exec = @import("ops/exec.zig");
 pub const batch = @import("ops/batch.zig");
+pub const reports = @import("ops/reports.zig");
 pub const catalog = @import("ops/catalog.zig");
 
 const Allocator = std.mem.Allocator;

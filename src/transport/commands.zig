@@ -284,6 +284,9 @@ fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     if (eql(verb, "create") or eql(verb, "update") or eql(verb, "delete") or eql(verb, "post") or eql(verb, "batch"))
         return cmdOpWrite(io, alloc, cli, fmt, pos.items, verb);
 
+    // M3 named reports (issue #7): balances + stock status.
+    if (eql(verb, "report")) return cmdOpReport(io, alloc, cli, fmt, pos.items);
+
     const limit: usize = blk: {
         const raw = cli.get("--limit") orelse break :blk 100;
         break :blk std.fmt.parseInt(usize, raw, 10) catch {
@@ -370,6 +373,74 @@ fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     const out_text = switch (fmt) {
         .json => try envelope.opJson(alloc, op_name, &res),
         .xml => try envelope.opXml(alloc, op_name, &res),
+    };
+    defer alloc.free(out_text);
+    try printOut(io, alloc, out_text);
+    try printOut(io, alloc, "\n");
+    return 0;
+}
+
+/// M3 named reports: `op report <name> [--flags]`. Flags become the
+/// JSON args object — one validation path (reports.zig) for CLI + HTTP.
+fn cmdOpReport(io: Io, alloc: Allocator, cli: Cli, fmt: Format, pos: []const []const u8) !u8 {
+    if (pos.len < 2)
+        return fail(io, alloc, fmt, "bad_args", "op report needs a name: account-balance | group-balance | trial-balance | stock-status");
+    const report = pos[1];
+
+    var entries: std.ArrayList(json.Value.Entry) = .empty;
+    var args_owned = false;
+    var args: json.Value = .{ .null = {} };
+    defer if (args_owned) args.deinit(alloc);
+    const str_flags = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q" };
+    for (str_flags) |f| {
+        var flag_buf: [24]u8 = undefined;
+        const flag = std.fmt.bufPrint(&flag_buf, "--{s}", .{f}) catch continue;
+        if (cli.get(flag)) |v| try ops.common.put(alloc, &entries, f, .{ .str = try alloc.dupe(u8, v) });
+    }
+    if (cli.get("--limit")) |raw| {
+        const n = std.fmt.parseInt(i64, raw, 10) catch {
+            entries.deinit(alloc);
+            return fail(io, alloc, fmt, "bad_args", "invalid --limit (non-negative integer; 0 = unlimited)");
+        };
+        try ops.common.put(alloc, &entries, "limit", .{ .int = n });
+    }
+    args = try ops.common.objFrom(alloc, &entries);
+    args_owned = true;
+
+    const o = optsFrom(cli) catch |err| {
+        var cb: [64]u8 = undefined;
+        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
+        const m = if (err == error.NoBusyProgId)
+            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
+        else
+            @errorName(err);
+        return fail(io, alloc, fmt, mach, m);
+    };
+    var sess = try busyc.Session.init(alloc);
+    defer sess.deinit();
+    openSession(&sess, o) catch |err| {
+        var cb: [64]u8 = undefined;
+        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
+    };
+
+    const result = ops.reports.run(&sess, alloc, report, &args) catch |err| {
+        var cb: [64]u8 = undefined;
+        const mach = if (err == error.NotFound)
+            "not_found"
+        else if (err == error.BadArgs)
+            "bad_args"
+        else
+            helpers.errCode(err, &cb);
+        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+        return fail(io, alloc, fmt, mach, msg);
+    };
+    var res = result;
+    defer res.deinit(alloc);
+
+    const out_text = switch (fmt) {
+        .json => try envelope.opJson(alloc, report, &res),
+        .xml => try envelope.opXml(alloc, report, &res),
     };
     defer alloc.free(out_text);
     try printOut(io, alloc, out_text);

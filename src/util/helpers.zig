@@ -125,6 +125,53 @@ pub fn oleDateToText(buf: []u8, ole: f64) ![]u8 {
     return std.fmt.bufPrint(buf, "{d:0>2}/{d:0>2}/{d}", .{ @as(u64, @intCast(d)), @as(u64, @intCast(m)), yy });
 }
 
+/// ISO `YYYY-MM-DD`, BUSY `DD-MM-YYYY` or `DD/MM/YYYY` -> OLE Automation
+/// days (1899-12-30 epoch). Inverse of oleDateToText; feeds VT_DATE
+/// arguments (services-class report methods date-type their params).
+pub fn dateToOle(s: []const u8) ?f64 {
+    if (s.len != 10) return null;
+    var y: i64 = 0;
+    var m: i64 = 0;
+    var d: i64 = 0;
+    if ((s[4] == '-' or s[4] == '/') and s[7] == s[4]) { // YYYY-MM-DD
+        y = std.fmt.parseInt(i64, s[0..4], 10) catch return null;
+        m = std.fmt.parseInt(i64, s[5..7], 10) catch return null;
+        d = std.fmt.parseInt(i64, s[8..10], 10) catch return null;
+    } else if ((s[2] == '-' or s[2] == '/') and s[5] == s[2]) { // DD-MM-YYYY / DD/MM/YYYY
+        d = std.fmt.parseInt(i64, s[0..2], 10) catch return null;
+        m = std.fmt.parseInt(i64, s[3..5], 10) catch return null;
+        y = std.fmt.parseInt(i64, s[6..10], 10) catch return null;
+    } else return null;
+    if (y < 1 or m < 1 or m > 12 or d < 1 or d > 31) return null;
+    return @as(f64, @floatFromInt(daysFromCivil(y, m, d) + 25569));
+}
+
+/// Howard Hinnant days_from_civil: days since 1970-01-01.
+fn daysFromCivil(y_in: i64, m: i64, d_in: i64) i64 {
+    const y = y_in - @as(i64, if (m <= 2) 1 else 0);
+    const era: i64 = @divFloor((if (y >= 0) y else y - 399), 400);
+    const yoe = y - era * 400; // [0, 399]
+    const mp: i64 = if (m > 2) m - 3 else m + 9; // [0, 11]
+    const doy = @divFloor(153 * mp + 2, 5) + d_in - 1; // [0, 365]
+    const doe = yoe * 365 + @divTrunc(yoe, 4) - @divTrunc(yoe, 100) + doy; // [0, 146096]
+    return era * 146097 + doe - 719468;
+}
+
+test "dateToOle round-trips with oleDateToText" {
+    const testing = std.testing;
+    var b: [16]u8 = undefined;
+    try testing.expectEqual(@as(f64, 25569.0), dateToOle("1970-01-01").?);
+    try testing.expectEqual(@as(f64, 46303.0), dateToOle("2026-10-08").?);
+    try testing.expectEqual(@as(f64, 46303.0), dateToOle("08-10-2026").?);
+    try testing.expectEqual(@as(f64, 46303.0), dateToOle("08/10/2026").?);
+    // round-trip: OLE -> text -> OLE
+    const txt = try oleDateToText(&b, 46113.0); // 2026-04-01
+    try testing.expectEqualStrings("01/04/2026", txt);
+    try testing.expectEqual(@as(f64, 46113.0), dateToOle(txt).?);
+    try testing.expect(dateToOle("garbage") == null);
+    try testing.expect(dateToOle("2026-13-01") == null);
+}
+
 test "oleDateToText" {
     const testing = std.testing;
     var b: [16]u8 = undefined;

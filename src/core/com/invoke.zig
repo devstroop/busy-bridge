@@ -22,6 +22,7 @@ const VT_I2 = win32.VT_I2;
 const VT_I4 = win32.VT_I4;
 const VT_R4 = win32.VT_R4;
 const VT_R8 = win32.VT_R8;
+const VT_CY = win32.VT_CY;
 const VT_DATE = win32.VT_DATE;
 const VT_BSTR = win32.VT_BSTR;
 const VT_DISPATCH = win32.VT_DISPATCH;
@@ -49,9 +50,13 @@ pub const CallResult = struct {
     }
 };
 
-/// Invoke method by name. JSON args are mapped to Variant params;
-/// `{"$byref": value}` objects become VT_BYREF|VT_VARIANT out-params and
-/// their post-call values are returned in `outs`.
+/// Invoke method by name. JSON args are mapped to Variant params.
+/// Markers (issue #7 M3 — services-class params are TYPED, not Variant):
+///   {"$byref": ""}         -> VT_BYREF|VT_VARIANT (As Variant params)
+///   {"$byref": "f8"|"i4"|"cy"|"i8"} -> typed out-param boxes (As
+///                              Double/Long/Currency/LongLong)
+///   {"$date": "YYYY-MM-DD"} -> VT_DATE input (report date params)
+/// Typed/Variant post-call values are returned in `outs`.
 pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
     const d = self.disp orelse return error.NoDispatch;
     var wname: [256]u16 = undefined;
@@ -69,16 +74,30 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     // VT_ERROR/DISP_E_PARAMNOTFOUND makes BUSY return E_INVALIDARG.
     const n = args.len;
 
+    const ByrefKind = enum { variant, f8, i4, cy, i8 };
     var storage = try self.alloc.alloc(VARIANT, @intCast(n));
     defer self.alloc.free(storage);
     var byref_slots = try self.alloc.alloc(VARIANT, @intCast(n));
     defer self.alloc.free(byref_slots);
     var is_byref = try self.alloc.alloc(bool, @intCast(n));
     defer self.alloc.free(is_byref);
+    var byref_kind = try self.alloc.alloc(ByrefKind, @intCast(n));
+    defer self.alloc.free(byref_kind);
+    // typed out-param boxes (preallocated; read back after Invoke)
+    var f8box = try self.alloc.alloc(f64, @intCast(n));
+    defer self.alloc.free(f8box);
+    var i4box = try self.alloc.alloc(i32, @intCast(n));
+    defer self.alloc.free(i4box);
+    var i8box = try self.alloc.alloc(i64, @intCast(n));
+    defer self.alloc.free(i8box);
     for (0..@as(usize, @intCast(n))) |i| {
         storage[i] = VARIANT.init();
         byref_slots[i] = VARIANT.init();
         is_byref[i] = false;
+        byref_kind[i] = .variant;
+        f8box[i] = 0;
+        i4box[i] = 0;
+        i8box[i] = 0;
     }
 
     // Fill in logical order; free on error.
@@ -91,7 +110,49 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
         if (i < args.len) {
             const a = args[i];
             if (a == .obj) {
+                if (a.get("$date")) |dv| {
+                    // VT_DATE input — report methods date-type their params
+                    const ole: f64 = switch (dv.*) {
+                        .str => |s| helpers.dateToOle(s) orelse {
+                            self.setErr("invalid $date '{s}' (YYYY-MM-DD / DD-MM-YYYY)", .{s});
+                            return error.BadArgs;
+                        },
+                        .int => |iv| @floatFromInt(iv),
+                        .float => |f| f,
+                        else => return error.BadArgs,
+                    };
+                    storage[i].vt = VT_DATE;
+                    storage[i].data.dblVal = ole;
+                    filled += 1;
+                    continue;
+                }
                 if (a.get("$byref")) |inner| {
+                    if (inner.* == .str and inner.str.len > 0) {
+                        // typed box marker (services-class typed params)
+                        if (std.mem.eql(u8, inner.str, "f8")) {
+                            storage[i].vt = VT_BYREF | VT_R8;
+                            storage[i].data.byref = &f8box[i];
+                            byref_kind[i] = .f8;
+                        } else if (std.mem.eql(u8, inner.str, "i4")) {
+                            storage[i].vt = VT_BYREF | VT_I4;
+                            storage[i].data.byref = &i4box[i];
+                            byref_kind[i] = .i4;
+                        } else if (std.mem.eql(u8, inner.str, "cy")) {
+                            storage[i].vt = VT_BYREF | VT_CY;
+                            storage[i].data.byref = &i8box[i];
+                            byref_kind[i] = .cy;
+                        } else if (std.mem.eql(u8, inner.str, "i8")) {
+                            storage[i].vt = VT_BYREF | VT_I8;
+                            storage[i].data.byref = &i8box[i];
+                            byref_kind[i] = .i8;
+                        } else {
+                            self.setErr("unknown $byref marker '{s}' (use \"\", f8, i4, cy, i8)", .{inner.str});
+                            return error.BadArgs;
+                        }
+                        is_byref[i] = true;
+                        filled += 1;
+                        continue;
+                    }
                     try variantFromValue(self, inner, &byref_slots[i]);
                     storage[i].vt = VT_BYREF | VT_VARIANT;
                     storage[i].data.byref = &byref_slots[i];
@@ -142,8 +203,17 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     }
     for (0..@as(usize, @intCast(n))) |i| {
         if (is_byref[i]) {
-            const v = try valueFromVariant(self, &byref_slots[i]);
-            _ = VariantClear(&byref_slots[i]);
+            const v = switch (byref_kind[i]) {
+                .variant => blk: {
+                    const vv = try valueFromVariant(self, &byref_slots[i]);
+                    _ = VariantClear(&byref_slots[i]);
+                    break :blk vv;
+                },
+                .f8 => json.Value{ .float = f8box[i] },
+                .i4 => json.Value{ .int = i4box[i] },
+                .cy => json.Value{ .float = @as(f64, @floatFromInt(i8box[i])) / 10000.0 }, // VT_CY scale
+                .i8 => json.Value{ .int = i8box[i] },
+            };
             try outs.append(self.alloc, v);
         } else {
             _ = VariantClear(&storage[i]);

@@ -73,9 +73,11 @@ structured error mapping. The XML codec from Phase 2 does the heavy lifting.
 
 ## Status
 
-**M1 (reads) + M2 (writes) implemented** — `core/ops/{masters,vouchers,
-exec,batch,catalog}.zig` behind `busy-bridge op …` and `GET|POST|PUT|
-DELETE /op/*` (README “Operations API”, [catalog](operations.md), live
-suites `tests/live/06-ops-reads.ps1` + `07-ops-writes.ps1` — including
-`BeginTran`/`CommitTran`/`RollBackTran` batch transactions through
-COtherServices). M3 (named reports) next — tracked in issue #7.
+**M1 (reads) + M2 (writes) + M3 (reports) implemented** —
+`core/ops/{masters,vouchers,exec,batch,reports,catalog}.zig` behind
+`busy-bridge op …` and `GET|POST|PUT|DELETE /op/*` (README “Operations
+API”, [catalog](operations.md), live suites `06-ops-reads`,
+`07-ops-writes`, `08-reports` — including `BeginTran`/`CommitTran`/
+`RollBackTran` batch transactions through COtherServices and named
+report operations over CMasterServices/GetItemValue with typed ByRef
+out-params). **All RFC milestones complete — issue #7 closed.**
