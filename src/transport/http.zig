@@ -16,6 +16,7 @@ const ops = @import("../core/ops.zig");
 const registry = @import("../core/registry.zig");
 const envelope = @import("envelope.zig");
 const format = @import("format.zig");
+const auth = @import("auth.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -43,6 +44,9 @@ const ConnCtx = struct {
     query_mode: sqlguard.Mode,
     /// Row cap for /query responses (0 = unlimited).
     max_rows: usize,
+    /// Issue #4 token gate: configured token, or null (loopback mode,
+    /// gate disarmed - byte-identical pre-#4 behavior).
+    token: ?[]const u8,
 };
 
 const Route = struct {
@@ -52,7 +56,7 @@ const Route = struct {
 };
 
 fn respond(w: *Io.Writer, status: []const u8, content_type: []const u8, body: []const u8) !void {
-    try w.print("HTTP/1.1 {s}\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{ status, content_type, body.len });
+    try w.print("HTTP/1.1 {s}\r\nContent-Type: {s}\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{ status, content_type, body.len });
     try w.writeAll(body);
     try w.flush();
 }
@@ -98,6 +102,8 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
     var expect_continue = false;
     var accept_hdr: []const u8 = "";
     var ctype_hdr: []const u8 = "";
+    var auth_hdr: []const u8 = "";
+    var xtok_hdr: []const u8 = "";
     while (true) {
         const l = (try rd.interface.takeDelimiter('\n')) orelse break;
         const line = std.mem.trim(u8, l, " \t\r");
@@ -108,12 +114,28 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
             accept_hdr = std.mem.trim(u8, line["accept:".len..], " ");
         } else if (startsWithCi(line, "content-type:")) {
             ctype_hdr = std.mem.trim(u8, line["content-type:".len..], " ");
+        } else if (startsWithCi(line, "authorization:")) {
+            auth_hdr = std.mem.trim(u8, line["authorization:".len..], " ");
+        } else if (startsWithCi(line, "x-bridge-token:")) {
+            xtok_hdr = std.mem.trim(u8, line["x-bridge-token:".len..], " ");
         } else if (startsWithCi(line, "expect:")) {
             if (std.ascii.eqlIgnoreCase(std.mem.trim(u8, line["expect:".len..], " "), "100-continue"))
                 expect_continue = true;
         }
     }
     const fmt = format.acceptFormat(accept_hdr);
+
+    // Issue #4: token gate before 100-continue, body, or routing. Armed
+    // only when a token is configured; /info exempt (issue decision),
+    // everything else - /health, 404s, all routes - requires it.
+    if (!auth.authorized(ctx.token, path, auth_hdr, xtok_hdr)) {
+        var wbuf: [1024]u8 = undefined;
+        var cw = stream.writer(ctx.io, &wbuf);
+        const p = errPayload(alloc, fmt, "401", "unauthorized", "missing or invalid token (send Authorization: Bearer <token> or X-Bridge-Token: <token>)") catch return;
+        defer alloc.free(p);
+        respond(&cw.interface, "401 Unauthorized", ctOf(fmt), p) catch {};
+        return;
+    }
 
     if (expect_continue) {
         var wbuf: [256]u8 = undefined;
@@ -625,6 +647,34 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
     };
     const host = cli.getOr("--host", "127.0.0.1");
     const port = std.fmt.parseInt(u16, cli.getOr("--port", "9820"), 10) catch cli_mod.DEFAULT_PORT;
+    // Token & exposure policy (issue #4): --token wins, BUSY_BRIDGE_TOKEN
+    // fallback; refuse a non-loopback bind with no token before COM opens.
+    var token_env: ?[]u8 = null;
+    defer if (token_env) |tv| alloc.free(tv);
+    const token: ?[]const u8 = if (cli.get("--token")) |tf|
+        (if (tf.len == 0) null else tf)
+    else blk: {
+        const own_env: std.process.Environ = .{ .block = .global };
+        const v = own_env.getAlloc(alloc, "BUSY_BRIDGE_TOKEN") catch |e| switch (e) {
+            error.EnvironmentVariableMissing => break :blk null,
+            else => return e,
+        };
+        if (v.len == 0) {
+            alloc.free(v);
+            break :blk null;
+        }
+        token_env = v;
+        break :blk v;
+    };
+    if (!auth.bindAllowed(token, host)) {
+        const msg = try std.fmt.allocPrint(alloc, "refusing to bind non-loopback host '{s}' without a token: pass --token <t> or set BUSY_BRIDGE_TOKEN (see README, Security)", .{host});
+        defer alloc.free(msg);
+        const etext = envelope.errJsonText(alloc, "token_required", msg) catch return 1;
+        defer alloc.free(etext);
+        try printOut(io, alloc, etext);
+        try printOut(io, alloc, "\n");
+        return 1;
+    }
 
     var sess = try busyc.Session.init(alloc);
     defer sess.deinit();
@@ -636,9 +686,9 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
 
     const mode_wire = if (guard.mode == .read_only) "read-only" else @tagName(guard.mode);
     const boot = try std.fmt.allocPrint(alloc,
-        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d}}}
+        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s}}}
         \\
-    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows });
+    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows, if (token != null) "true" else "false" });
     defer alloc.free(boot);
     try printOut(io, alloc, boot);
 
@@ -649,6 +699,7 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
         .comp = o.comp,
         .query_mode = guard.mode,
         .max_rows = guard.max_rows,
+        .token = token,
     };
     while (true) {
         var stream = server.accept(io) catch |err| {

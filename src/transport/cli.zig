@@ -30,6 +30,8 @@ pub const Usage =
     \\       [--comp C] [--prog-id P]                   POST /query {"sql":..} /call {"method":..}
     \\       [--query-mode full|read-only|off]          guard (serve defaults to read-only)
     \\       [--max-rows N]                             row cap (default 10000; 0 = unlimited)
+    \\       [--token T]                                auth token (or BUSY_BRIDGE_TOKEN env);
+    \\                                              non-loopback --host refuses without it
     \\  busy-bridge version
     \\
     \\common options: --prog-id (default: auto-discovered newest registered

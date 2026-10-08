@@ -89,7 +89,8 @@ tolerates attributes, CDATA, comments, PIs and DOCTYPE skips defensively.
 
 ## HTTP API
 
-Base: `http://127.0.0.1:9820` (loopback by default; `--host` to change).
+Base: `http://127.0.0.1:9820` (loopback by default; `--host` to change — going
+off-loopback requires a token, see [Security](#security-token-auth--exposure-policy)).
 
 | Route | Request | Notes |
 |---|---|---|
@@ -121,6 +122,86 @@ Invoke-WebRequest "$base/call?method=SaveMasterFromXML&type=2" -Method Post -Bod
     -ContentType 'application/xml' -Headers @{Accept='application/xml'}
 # -> <Call method='SaveMasterFromXML'><Result>true</Result>...
 ```
+
+## Security (token auth & exposure policy)
+
+The serve edge is **loopback-only by default and open without a token** — a
+deliberate development setup (issue #4 keeps earlier suites and any
+`serve`-without-token flow on `127.0.0.1` exactly as it was). Exposing the
+bridge beyond loopback requires a token, and the serve refuses to start
+otherwise:
+
+| situation | behaviour |
+|---|---|
+| `--host 0.0.0.0` (or any non-loopback host) without `--token`/`BUSY_BRIDGE_TOKEN` | refuses to bind, exit 1, error `token_required` telling you how to fix it |
+| `--token <t>` or `BUSY_BRIDGE_TOKEN=<t>` | server starts; boot line reports `"auth":true` |
+| request without/wrong token on any route | HTTP 401, standard error envelope, code `unauthorized` (JSON or XML per `Accept`) |
+| request with right token | `Authorization: Bearer <t>` or `X-Bridge-Token: <t>` (scheme case-insensitive) |
+| `GET /info` | always reachable without a token: identity/routes only, no company data |
+
+### Threat model
+
+The bridge's default posture is *trusted machine, loopback only*: whoever can
+open a TCP socket on `127.0.0.1:9820` is treated as the local operator (same
+trust as the CLI, which is unaffected by this gate - same-process trust). The
+moment the server is reachable from the network that assumption is false: the
+protocol grants arbitrary `call`/`query` with full write access. So the
+exposure policy is:
+
+- **Off loopback the caller must prove they hold a shared secret (the
+  token).** The token is a bearer credential: anyone who can read it (env
+  leak, config file, unencrypted hop) is an authorized caller. It is
+  compared for exact match at the transport edge, never logged, and an
+  empty token counts as "not configured" (so `--token ""` cannot
+  accidentally expose an unauthenticated server - it falls back to
+  `BUSY_BRIDGE_TOKEN`, and with neither set the safe-bind rule keeps the
+  gate off only for loopback).
+- **The token authorizes the caller; it does not constrain what they can
+  do.** The guarded-query SQL filter (see [Query safety](#query-safety-guarded-query),
+  issue #3) **composes with this**: even an authorized caller gets
+  read-only SQL unless writes are explicitly allowed. Run both - the token
+  is authentication, the SQL guard is least privilege, and remote exposure
+  stacks them (that is the intended posture).
+- **Out of scope here** (issue #4): per-user auth, RBAC, sessions - those
+  belong to the facade/company-rights layer - and encryption, which is a
+  proxy's job.
+
+### TLS: terminate it in front, not in the bridge
+
+The bridge speaks plain HTTP and terminates no TLS itself. For real remote
+exposure put a TLS-terminating reverse proxy in front and give the bridge a
+long random token:
+
+```caddy
+# Caddy (automatic Let's Encrypt): Caddyfile
+busy.example.com {
+    reverse_proxy 127.0.0.1:9820   # bridge stays loopback-bound
+}
+```
+
+```nginx
+# nginx equivalent
+server {
+    listen 443 ssl;
+    server_name busy.example.com;
+    ssl_certificate     /etc/letsencrypt/live/busy.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/busy.example.com/privkey.pem;
+    location / { proxy_pass http://127.0.0.1:9820; }
+}
+```
+
+The token then travels inside the TLS tunnel and never crosses the internet
+in the clear. No proxy available? An SSH tunnel
+(`ssh -L 9820:127.0.0.1:9820 user@host`) or WireGuard achieves the same
+without exposing the port at all.
+
+### At a glance
+
+- The policy lives in [`src/transport/auth.zig`](src/transport/auth.zig)
+  (pure, unit-tested decisions); `serve` consults it at startup and on every
+  request. Live coverage: `tests/live/09-auth.ps1`.
+- The resolved bind address is always printed on the boot line, so a
+  hostname that resolves somewhere unexpected is visible, not silent.
 
 ## Query safety (guarded query)
 
