@@ -65,6 +65,70 @@ pub const all = [_]Op{
         .params = "code (Tran1 VchCode)",
         .summary = "one voucher: scalars (no/date/series/party) + full document tree",
     },
+    // ---- M2 writes (issue #7): one exec dispatcher for CLI + HTTP ----
+    .{
+        .name = "create-account",
+        .route = "POST /op/account",
+        .cli = "op create account <name> --json {..}",
+        .params = "name (positional or in JSON), parent (group name)",
+        .summary = "create an account master; returns {kind, code, name, parent}",
+    },
+    .{
+        .name = "update-account",
+        .route = "PUT /op/account?name=",
+        .cli = "op update account <name> --json {..}",
+        .params = "name (key), fields: parent — merged into the full existing document",
+        .summary = "update by name; untouched BUSY fields preserved",
+    },
+    .{
+        .name = "delete-account",
+        .route = "DELETE /op/account?name=",
+        .cli = "op delete account <name>",
+        .params = "name (exact business name)",
+        .summary = "delete an account master -> {code, deleted:true}",
+    },
+    .{
+        .name = "create-item",
+        .route = "POST /op/item",
+        .cli = "op create item <name> --json {..}",
+        .params = "name, parent (group), unit (main unit)",
+        .summary = "create an item master; returns {kind, code, name, parent, unit}",
+    },
+    .{
+        .name = "update-item",
+        .route = "PUT /op/item?name=",
+        .cli = "op update item <name> --json {..}",
+        .params = "name (key), fields: parent, unit",
+        .summary = "update by name; untouched BUSY fields preserved",
+    },
+    .{
+        .name = "delete-item",
+        .route = "DELETE /op/item?name=",
+        .cli = "op delete item <name>",
+        .params = "name (exact business name)",
+        .summary = "delete an item master -> {code, deleted:true}",
+    },
+    .{
+        .name = "post-voucher",
+        .route = "POST /op/voucher",
+        .cli = "op post --json {..}",
+        .params = "type (sale|journal, or any type with doc), date YYYY-MM-DD, series (default Main), no?, sale: stpt, party, store?, lines[]; journal: entries[] {account, amount, dr}; or doc: {Root:{...}} passthrough",
+        .summary = "post a voucher; returns {code, type, posted:true} (VchCode via ByRef)",
+    },
+    .{
+        .name = "delete-voucher",
+        .route = "DELETE /op/voucher?code=",
+        .cli = "op delete voucher <code>",
+        .params = "code (integer VchCode)",
+        .summary = "delete a voucher -> {code, deleted:true}",
+    },
+    .{
+        .name = "batch",
+        .route = "POST /op/batch",
+        .cli = "op batch --json [..]",
+        .params = "array of {op, args} write entries",
+        .summary = "run write ops inside BeginTran/CommitTran; any failure rolls back all (code: batch_rolled_back)",
+    },
 };
 
 pub fn find(name: []const u8) ?*const Op {
@@ -103,17 +167,20 @@ pub fn markdown(alloc: Allocator) ![]u8 {
 const testing = std.testing;
 
 test "catalog is well-formed" {
-    try testing.expect(all.len >= 7);
+    try testing.expect(all.len >= 16);
     for (&all) |*op| {
         try testing.expect(op.name.len > 0);
-        try testing.expect(std.mem.startsWith(u8, op.route, "GET /op"));
+        try testing.expect(std.mem.indexOf(u8, op.route, "/op") != null);
         try testing.expect(std.mem.startsWith(u8, op.cli, "op "));
     }
     try testing.expect(find("list-accounts") != null);
+    try testing.expect(find("post-voucher") != null);
+    try testing.expect(find("batch") != null);
     try testing.expect(find("nope") == null);
 
     const md = try markdown(testing.allocator);
     defer testing.allocator.free(md);
     try testing.expect(std.mem.indexOf(u8, md, "| `get-voucher` | `GET /op/voucher?code=` |") != null);
     try testing.expect(std.mem.indexOf(u8, md, "op list vouchers") != null);
+    try testing.expect(std.mem.indexOf(u8, md, "POST /op/batch") != null);
 }

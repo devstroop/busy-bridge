@@ -8,10 +8,13 @@
 const std = @import("std");
 const json = @import("../util/json.zig");
 const busyc = @import("com.zig");
+const registry = @import("registry.zig");
 
 pub const masters = @import("ops/masters.zig");
 pub const vouchers = @import("ops/vouchers.zig");
 pub const common = @import("ops/common.zig");
+pub const exec = @import("ops/exec.zig");
+pub const batch = @import("ops/batch.zig");
 pub const catalog = @import("ops/catalog.zig");
 
 const Allocator = std.mem.Allocator;
@@ -26,16 +29,41 @@ pub const OpenOpts = struct {
 
 pub fn openSession(sess: *busyc.Session, o: OpenOpts) !void {
     try sess.create(o.prog_id);
-    if (o.comp) |c| {
-        var open_args = [_]json.Value{ .{ .str = o.busy }, .{ .str = o.data }, .{ .str = c } };
-        var r = try sess.invoke("OpenDB", &open_args);
-        defer r.deinit(sess.alloc);
-        switch (r.ret) {
-            .bool => |b| if (!b) {
-                sess.setErr("OpenDB rejected company '{s}' in {s}", .{ c, o.data });
+    const comp = o.comp orelse return;
+    var open_args = [_]json.Value{ .{ .str = o.busy }, .{ .str = o.data }, .{ .str = comp } };
+
+    if (sess.invoke("OpenDB", &open_args)) |r| {
+        var res = r;
+        defer res.deinit(sess.alloc);
+        if (res.ret == .bool and !res.ret.bool) {
+            sess.setErr("OpenDB rejected company '{s}' in {s}", .{ comp, o.data });
+            return error.OpenDbFailed;
+        }
+        return;
+    } else |err| {
+        if (err != error.NoSuchMember) return err;
+        // Services classes (CMasterServices/CTranServices/COtherServices)
+        // have no OpenDB: open through a transient fixed-interface
+        // session. Probe-verified (issue #7 M2): the company state lives
+        // in the COM server for this process and outlives the opener.
+        const fi = registry.newestFixedInterface() orelse return error.NoBusyProgId;
+        var aux = try busyc.Session.init(sess.alloc);
+        defer aux.deinit();
+        aux.create(fi) catch |aerr| {
+            sess.setErr("aux open via '{s}' failed: {s}", .{ fi, @errorName(aerr) });
+            return aerr;
+        };
+        if (aux.invoke("OpenDB", &open_args)) |ar| {
+            var ares = ar;
+            defer ares.deinit(aux.alloc);
+            if (ares.ret == .bool and !ares.ret.bool) {
+                sess.setErr("OpenDB rejected company '{s}' in {s}", .{ comp, o.data });
                 return error.OpenDbFailed;
-            },
-            else => {},
+            }
+            return;
+        } else |aerr| {
+            sess.setErr("aux OpenDB failed: {s}", .{@errorName(aerr)});
+            return aerr;
         }
     }
 }

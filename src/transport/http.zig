@@ -182,14 +182,20 @@ fn opOk(alloc: Allocator, fmt: Format, op_name: []const u8, v: *const json.Value
     return .{ .status = "200 OK", .content_type = ctOf(fmt), .payload = payload };
 }
 
-/// Map operation errors to routes: NotFound -> 404, BadArgs -> 400;
-/// anything else stays `null` so the caller propagates (-> 500 path).
+/// Map operation errors to routes: NotFound -> 404, BadArgs -> 400,
+/// BusyRejected/BatchRolledBack -> 422 (BUSY's own verdict / rolled
+/// back); anything else stays `null` so the caller propagates (-> 500).
 fn opErr(alloc: Allocator, fmt: Format, sess: *busyc.Session, err: anyerror) !?Route {
     const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
     if (err == error.NotFound)
         return .{ .status = "404 Not Found", .content_type = ctOf(fmt), .payload = try errPayload(alloc, fmt, "404", "not_found", msg) };
     if (err == error.BadArgs)
         return .{ .status = "400 Bad Request", .content_type = ctOf(fmt), .payload = try errPayload(alloc, fmt, "400", "bad_args", msg) };
+    if (err == error.BusyRejected or err == error.BatchRolledBack) {
+        var cb: [64]u8 = undefined;
+        const mach = helpers.errCode(err, &cb);
+        return .{ .status = "422 Unprocessable Entity", .content_type = ctOf(fmt), .payload = try errPayload(alloc, fmt, "422", mach, msg) };
+    }
     return null;
 }
 
@@ -324,6 +330,95 @@ fn route(
             return err;
         };
         return opOk(ralloc, fmt, "get-voucher", &v);
+    }
+
+    // ---- M2 writes (issue #7): one exec dispatcher for CLI + HTTP ----
+    if (eql(verb, "POST") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
+        const parsed = json.parse(ralloc, body) catch {
+            return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
+        };
+        const op_name = if (eql(path, "/op/account")) "create-account" else "create-item";
+        const v = ops.exec.run(ctx.sess, ralloc, op_name, &parsed) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, op_name, &v);
+    }
+    if (eql(verb, "PUT") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
+        const raw_name = (try qparam(ralloc, query, "name")) orelse
+            return badReq(ralloc, fmt, "bad_args", "missing \"name\" (the master to change)");
+        const parsed = json.parse(ralloc, body) catch {
+            return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
+        };
+        // inject the positional key (it wins over "name" in the body)
+        var ne: std.ArrayList(json.Value.Entry) = .empty;
+        try ops.common.put(ralloc, &ne, "name", .{ .str = try ralloc.dupe(u8, raw_name) });
+        const name_obj = try ops.common.objFrom(ralloc, &ne);
+        const merged = ops.common.mergeRoot(ralloc, &parsed, &name_obj) catch {
+            return badReq(ralloc, fmt, "bad_args", "body must be a JSON object of string values");
+        };
+        const op_name = if (eql(path, "/op/account")) "update-account" else "update-item";
+        const v = ops.exec.run(ctx.sess, ralloc, op_name, &merged) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, op_name, &v);
+    }
+    if (eql(verb, "DELETE") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
+        const raw_name = (try qparam(ralloc, query, "name")) orelse
+            return badReq(ralloc, fmt, "bad_args", "missing \"name\"");
+        var ne: std.ArrayList(json.Value.Entry) = .empty;
+        try ops.common.put(ralloc, &ne, "name", .{ .str = try ralloc.dupe(u8, raw_name) });
+        const args_v = try ops.common.objFrom(ralloc, &ne);
+        const op_name = if (eql(path, "/op/account")) "delete-account" else "delete-item";
+        const v = ops.exec.run(ctx.sess, ralloc, op_name, &args_v) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, op_name, &v);
+    }
+    if (eql(verb, "POST") and eql(path, "/op/voucher")) {
+        const parsed = json.parse(ralloc, body) catch {
+            return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
+        };
+        const v = ops.exec.run(ctx.sess, ralloc, "post-voucher", &parsed) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, "post-voucher", &v);
+    }
+    if (eql(verb, "DELETE") and eql(path, "/op/voucher")) {
+        const raw_code = (try qparam(ralloc, query, "code")) orelse
+            return badReq(ralloc, fmt, "bad_args", "missing \"code\" (integer VchCode)");
+        const code = std.fmt.parseInt(i64, raw_code, 10) catch
+            return badReq(ralloc, fmt, "bad_args", "invalid \"code\" (integer VchCode)");
+        var ce: std.ArrayList(json.Value.Entry) = .empty;
+        try ops.common.put(ralloc, &ce, "code", .{ .int = code });
+        const args_v = try ops.common.objFrom(ralloc, &ce);
+        const v = ops.exec.run(ctx.sess, ralloc, "delete-voucher", &args_v) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, "delete-voucher", &v);
+    }
+    if (eql(verb, "POST") and eql(path, "/op/batch")) {
+        const parsed = json.parse(ralloc, body) catch {
+            return badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
+        };
+        // accept a bare array or {"ops":[...]}
+        var entries: json.Value = parsed;
+        if (parsed == .obj) {
+            if (parsed.get("ops")) |o| {
+                if (o.* != .arr) return badReq(ralloc, fmt, "bad_args", "\"ops\" must be an array");
+                entries = o.*;
+            } else return badReq(ralloc, fmt, "bad_args", "body must be an array of entries or {\"ops\":[...]}");
+        }
+        if (entries != .arr) return badReq(ralloc, fmt, "bad_args", "body must be a JSON array of entries");
+        const v = ops.batch.run(ctx.sess, ralloc, &entries) catch |err| {
+            if (try opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+            return err;
+        };
+        return opOk(ralloc, fmt, "batch", &v);
     }
 
     if (eql(verb, "POST") and eql(path, "/query")) {

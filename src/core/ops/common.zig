@@ -70,6 +70,92 @@ pub fn normalizeDate(alloc: Allocator, s: []const u8) anyerror!?[]u8 {
     return null;
 }
 
+/// Inverse: ISO `YYYY-MM-DD` (or already-BUSY `DD-MM-YYYY`/`DD/MM/YYYY`)
+/// -> BUSY's write format `DD-MM-YYYY` (what SaveVchFromXML expects —
+/// the vendor templates and every live write used dashes).
+pub fn toBusyDate(alloc: Allocator, s: []const u8) anyerror!?[]u8 {
+    if (s.len == 10 and s[2] == '-' and s[5] == '-' and s[6] >= '0' and s[6] <= '9')
+        return try alloc.dupe(u8, s); // already DD-MM-YYYY
+    if (s.len == 10 and s[2] == '/' and s[5] == '/' and s[6] >= '0' and s[6] <= '9')
+        return try std.fmt.allocPrint(alloc, "{s}-{s}-{s}", .{ s[0..2], s[3..5], s[6..10] });
+    if (s.len == 10 and s[4] == '-' and s[7] == '-') // ISO
+        return try std.fmt.allocPrint(alloc, "{s}-{s}-{s}", .{ s[8..10], s[5..7], s[0..4] });
+    return null;
+}
+
+/// Merge `src` fields into a deep copy of `dst` (both objects): every
+/// top-level key of `src` overwrites/creates in the result. Used by
+/// update ops — we fetch the FULL existing document, merge only the
+/// requested changes, and re-save, so BUSY never wipes untouched fields.
+/// `dst`/`src` are borrowed; the result is owned by `alloc`.
+pub fn mergeRoot(alloc: Allocator, dst: *const json.Value, src: *const json.Value) !json.Value {
+    if (dst.* != .obj or src.* != .obj) return error.BadDocument;
+    var out: std.ArrayList(json.Value.Entry) = .empty;
+    errdefer {
+        var tmp = json.Value{ .obj = out.items };
+        tmp.deinit(alloc);
+        out.deinit(alloc);
+    }
+    // start from dst (owned copies)
+    for (dst.obj) |e| {
+        try out.append(alloc, .{ .key = try alloc.dupe(u8, e.key), .val = try dupValue(alloc, &e.val) });
+    }
+    // overwrite/create from src
+    for (src.obj) |e| {
+        var replaced = false;
+        for (out.items) |*slot| {
+            if (std.mem.eql(u8, slot.key, e.key)) {
+                slot.val.deinit(alloc);
+                slot.val = try dupValue(alloc, &e.val);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) try out.append(alloc, .{ .key = try alloc.dupe(u8, e.key), .val = try dupValue(alloc, &e.val) });
+    }
+    return .{ .obj = try out.toOwnedSlice(alloc) };
+}
+
+/// Deep owned copy of any Value.
+pub fn dupValue(alloc: Allocator, v: *const json.Value) !json.Value {
+    switch (v.*) {
+        .null => return .{ .null = {} },
+        .bool => |b| return .{ .bool = b },
+        .int => |i| return .{ .int = i },
+        .float => |f| return .{ .float = f },
+        .str => |s| return .{ .str = try alloc.dupe(u8, s) },
+        .arr => |a| {
+            var out = try alloc.alloc(json.Value, a.len);
+            var n: usize = 0;
+            errdefer {
+                for (out[0..n]) |*e| e.deinit(alloc);
+                alloc.free(out);
+            }
+            for (a, 0..) |*e, i| {
+                out[i] = try dupValue(alloc, e);
+                n += 1;
+            }
+            return .{ .arr = out };
+        },
+        .obj => |entries| {
+            var out = try alloc.alloc(json.Value.Entry, entries.len);
+            var n: usize = 0;
+            errdefer {
+                for (out[0..n]) |*e| {
+                    e.val.deinit(alloc);
+                    alloc.free(e.key);
+                }
+                alloc.free(out);
+            }
+            for (entries, 0..) |e, i| {
+                out[i] = .{ .key = try alloc.dupe(u8, e.key), .val = try dupValue(alloc, &e.val) };
+                n += 1;
+            }
+            return .{ .obj = out };
+        },
+    }
+}
+
 /// Resolve Master1 names for a set of codes (one batched IN query; Code is
 /// the global primary key). Returns owned pairs; missing codes are simply
 /// absent — caller emits null.
@@ -184,6 +270,44 @@ test "normalizeDate" {
     try testing.expectEqualStrings("2026-10-08", dash);
     try testing.expect((try normalizeDate(a, "not a date")) == null);
     try testing.expect((try normalizeDate(a, "8/10/2026")) == null);
+}
+
+test "toBusyDate write format" {
+    const a = testing.allocator;
+    const iso = (try toBusyDate(a, "2026-10-08")).?;
+    defer a.free(iso);
+    try testing.expectEqualStrings("08-10-2026", iso);
+    const busy = (try toBusyDate(a, "08-10-2026")).?;
+    defer a.free(busy);
+    try testing.expectEqualStrings("08-10-2026", busy); // idempotent
+    const slash = (try toBusyDate(a, "08/10/2026")).?;
+    defer a.free(slash);
+    try testing.expectEqualStrings("08-10-2026", slash);
+    try testing.expect((try toBusyDate(a, "garbage")) == null);
+    // round-trip with normalizeDate
+    const rt = (try normalizeDate(a, (try toBusyDate(a, "2026-01-02")).?)).?;
+    defer a.free(rt);
+    try testing.expectEqualStrings("2026-01-02", rt);
+}
+
+test "mergeRoot overwrites and keeps untouched fields" {
+    const a = testing.allocator;
+    var dst = try json.parse(a,
+        \\\\{"Name":"ZigItem","ParentGroup":"General","MainUnit":"Pcs.","Extra":{"A":"1"}}
+    );
+    defer dst.deinit(a);
+    var src = try json.parse(a,
+        \\\\{"ParentGroup":"Machinery","NewField":"x"}
+    );
+    defer src.deinit(a);
+    var m = try mergeRoot(a, &dst, &src);
+    defer m.deinit(a);
+    try testing.expectEqualStrings("ZigItem", m.get("Name").?.str); // kept
+    try testing.expectEqualStrings("Machinery", m.get("ParentGroup").?.str); // overwritten
+    try testing.expectEqualStrings("Pcs.", m.get("MainUnit").?.str); // kept
+    try testing.expectEqualStrings("x", m.get("NewField").?.str); // added
+    // deep copy: mutating src's tree must not affect merged result
+    try testing.expect(m.get("Extra").?.get("A").?.str.ptr != dst.get("Extra").?.get("A").?.str.ptr);
 }
 
 test "containsCi" {

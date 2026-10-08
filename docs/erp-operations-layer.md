@@ -73,7 +73,9 @@ structured error mapping. The XML codec from Phase 2 does the heavy lifting.
 
 ## Status
 
-**M1 (reads) implemented** — `core/ops/{masters,vouchers,catalog}.zig`
-behind `busy-bridge op …` and `GET /op/*` (README “Operations API”,
-[catalog](operations.md), live suite `tests/live/06-ops-reads.ps1`).
-M2 (writes) and M3 (reports) next — tracked in issue #7.
+**M1 (reads) + M2 (writes) implemented** — `core/ops/{masters,vouchers,
+exec,batch,catalog}.zig` behind `busy-bridge op …` and `GET|POST|PUT|
+DELETE /op/*` (README “Operations API”, [catalog](operations.md), live
+suites `tests/live/06-ops-reads.ps1` + `07-ops-writes.ps1` — including
+`BeginTran`/`CommitTran`/`RollBackTran` batch transactions through
+COtherServices). M3 (named reports) next — tracked in issue #7.

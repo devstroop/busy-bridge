@@ -9,7 +9,8 @@ $scripts = @(
     '03-wire-modes.ps1',
     '04-voucher-roundtrip.ps1',
     '05-query-guard.ps1',
-    '06-ops-reads.ps1'
+    '06-ops-reads.ps1',
+    '07-ops-writes.ps1'
 )
 $failed = 0
 foreach ($t in $scripts) {

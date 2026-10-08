@@ -17,4 +17,13 @@ section "Operations API".
 | `get-item` | `GET /op/item?name=` | `busy-bridge op get item <name>` | name (exact business name) | one item: identity + parent group + full document tree |
 | `list-vouchers` | `GET /op/vouchers` | `busy-bridge op list vouchers` | type (canonical name, e.g. sale; default all), limit (default 100) | list vouchers: {code, type{code,name}, no, date, series{code,name}, party{code,name}} |
 | `get-voucher` | `GET /op/voucher?code=` | `busy-bridge op get voucher <code>` | code (Tran1 VchCode) | one voucher: scalars (no/date/series/party) + full document tree |
+| `create-account` | `POST /op/account` | `busy-bridge op create account <name> --json {..}` | name (positional or in JSON), parent (group name) | create an account master; returns {kind, code, name, parent} |
+| `update-account` | `PUT /op/account?name=` | `busy-bridge op update account <name> --json {..}` | name (key), fields: parent ΓÇö merged into the full existing document | update by name; untouched BUSY fields preserved |
+| `delete-account` | `DELETE /op/account?name=` | `busy-bridge op delete account <name>` | name (exact business name) | delete an account master -> {code, deleted:true} |
+| `create-item` | `POST /op/item` | `busy-bridge op create item <name> --json {..}` | name, parent (group), unit (main unit) | create an item master; returns {kind, code, name, parent, unit} |
+| `update-item` | `PUT /op/item?name=` | `busy-bridge op update item <name> --json {..}` | name (key), fields: parent, unit | update by name; untouched BUSY fields preserved |
+| `delete-item` | `DELETE /op/item?name=` | `busy-bridge op delete item <name>` | name (exact business name) | delete an item master -> {code, deleted:true} |
+| `post-voucher` | `POST /op/voucher` | `busy-bridge op post --json {..}` | type (sale|journal, or any type with doc), date YYYY-MM-DD, series (default Main), no?, sale: stpt, party, store?, lines[]; journal: entries[] {account, amount, dr}; or doc: {Root:{...}} passthrough | post a voucher; returns {code, type, posted:true} (VchCode via ByRef) |
+| `delete-voucher` | `DELETE /op/voucher?code=` | `busy-bridge op delete voucher <code>` | code (integer VchCode) | delete a voucher -> {code, deleted:true} |
+| `batch` | `POST /op/batch` | `busy-bridge op batch --json [..]` | array of {op, args} write entries | run write ops inside BeginTran/CommitTran; any failure rolls back all (code: batch_rolled_back) |
 

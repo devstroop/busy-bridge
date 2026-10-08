@@ -168,8 +168,10 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
 
 | | |
 |---|---|
-| CLI | `busy-bridge op catalog` · `op list accounts\|items\|vouchers [--limit N] [--q X] [--type NAME]` · `op get account\|item <name>` / `op get voucher <code>` |
-| HTTP | `GET /op` (catalog) · `/op/accounts[?limit=&q=]` `/op/account?name=` · `/op/items[?limit=&q=]` `/op/item?name=` · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` |
+| CLI (reads) | `busy-bridge op catalog` · `op list accounts\|items\|vouchers [--limit N] [--q X] [--type NAME]` · `op get account\|item <name>` / `op get voucher <code>` |
+| CLI (writes) | `op create\|update <account\|item> <name> --json '{..}'` · `op delete <account\|item> <name>` / `op delete voucher <code>` · `op post --json '{..}'` · `op batch --json '[..]'` (`--json-b64` for PowerShell) |
+| HTTP (reads) | `GET /op` (catalog) · `/op/accounts[?limit=&q=]` `/op/account?name=` · `/op/items[?limit=&q=]` `/op/item?name=` · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` |
+| HTTP (writes) | `POST /op/account` · `PUT /op/account?name=` · `DELETE /op/account?name=` (item routes identical) · `POST /op/voucher` · `DELETE /op/voucher?code=` · `POST /op/batch` |
 
 - **Envelopes** (both formats, both transports): JSON
   `{"ok":true,"op":"list-accounts","result":{…}}` — same shape as
@@ -185,17 +187,33 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
   (client-side — BUSY's `LIKE` silently returns empty), `type` =
   canonical voucher name (`sale`, case-insensitive), `name` = exact
   business key, `code` = integer VchCode.
-- **Errors**: `not_found` (HTTP 404 / exit 1) and `bad_args` (400 / 1)
+- **Errors**: `not_found` (HTTP 404 / exit 1), `bad_args` (400 / 1),
+  `busy_rejected` (422 — BUSY's own verdict, e.g. *Invalid voucher
+  series*), `batch_rolled_back` (422 — which entry broke and why), all
   with session-level messages; unknown voucher types point at
   `GET /constants`.
+- **Writes are mechanical inside**: `create` builds the minimal document
+  (`<Account><Name/><ParentGroup/>`); `update` fetches the **full**
+  existing document, merges only the requested fields and re-saves with
+  `modify=true` — untouched BUSY fields are never wiped; `post` offers
+  structured builders for `sale` and `journal` (plus a raw `doc`
+  single-key passthrough for any other type) and reads back the new
+  VchCode from `SaveVchFromXML`'s ByRef out-param. Dates go
+  `YYYY-MM-DD` in, `DD-MM-YYYY` on the wire, ISO out.
+- **Batch = real transactions**: `POST /op/batch` / `op batch` run write
+  entries inside `BeginTran`/`CommitTran` on **COtherServices** (the
+  bridge auto-opens the company through a transient fixed-interface
+  session — services classes share in-process state, probe-verified).
+  Any failure calls `RollBackTran` and reports `op[N] '<op>': <reason>`;
+  read ops are rejected as batch entries.
 - **Catalog**: [docs/operations.md](docs/operations.md) — generated from
   the single source table in `src/core/ops/catalog.zig` by
   `scripts/docs/generate-ops-doc.ps1` (same table serves `op catalog`
   and `GET /op`).
 
-Status: **M1 (reads) shipped** — M2 (writes: create/update master, post
-voucher with structured errors + `BeginTran` batches) and M3 (named
-reports) follow per [issue #7](https://github.com/devstroop/busy-bridge/issues/7)
+Status: **M1 (reads) + M2 (writes: master CRUD, voucher posts, batch
+transactions) shipped** — M3 (named reports) follows per
+[issue #7](https://github.com/devstroop/busy-bridge/issues/7)
 and [the RFC](docs/erp-operations-layer.md).
 
 ## Architecture
