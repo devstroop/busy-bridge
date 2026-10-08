@@ -22,6 +22,15 @@ verified against a live installation (company DEMO) during the migration.
 The wire contract (JSON/XML negotiation, envelopes, mapping rules) is
 specified in the repository [README](../README.md).
 
+## Direction
+
+- [Roadmap & future direction](roadmap.md) — horizons: contract hardening →
+  ERP-centric facade → apps (web/mobile) → MCP/agent surface
+- [Open issues](issues/README.md) — paste-ready backlog **001–010** with labels,
+  effort, dependencies
+- [ERP operations layer (RFC)](erp-operations-layer.md) — the layer decision
+  for the normalized surface (same repo, strict layer; raw tier stays)
+
 ## Complete archive
 
 `archive/` holds **faithful full-text conversions** of every original
