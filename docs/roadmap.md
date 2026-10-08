@@ -10,6 +10,18 @@ The **raw tier is complete**: `busy-bridge` exposes every registered BUSY
 class over a validated JSON/XML wire contract, in enforceable layers, with
 docs (guides + full archive + generated reference) and live tests.
 
+**H0 is done** (2026-10-09): runtime ProgID discovery (001), contract
+hardening (002), guarded query (003), and voucher write validation (006)
+are all implemented and covered by the nine live suites in
+`tests/live/` (full `run-all.ps1` green against DEMO). Token auth +
+exposure policy (004) is also closed — non-loopback bind requires a token.
+
+**The first facade slice exists**: a `core/ops` layer (masters, vouchers,
+reports, batch, catalog) exposed as `busy-bridge op …` subcommands
+(CLI-only so far) and validated live by suites 06–08. What remains of
+007 is the HTTP `/v1` resource surface, paging, and multi-company
+sessions (005); what remains of 008 is the MCP adapter.
+
 Verb-clustering of the 16 core classes reveals the shape of what's next:
 
 | Signal | Count (approx.) | Implication |
@@ -62,16 +74,16 @@ flowchart TD
 
 ## Horizons
 
-### H0 — Harden the contract *(now, small, unblocks everything)*
+### H0 — Harden the contract ✅ *(done 2026-10-09)*
 - [`001-runtime-progid-discovery.md`](issues/001-runtime-progid-discovery.md) — stop hardcoding `Busy2L21` (next BUSY upgrade breaks the default today)
 - [`002-contract-hardening.md`](issues/002-contract-hardening.md) — `constants.json`, `GET /info`, machine-readable error codes
 - [`003-guarded-query.md`](issues/003-guarded-query.md) — SQL safety modes before anything is exposed
 - [`006-voucher-write-validation.md`](issues/006-voucher-write-validation.md) — close the last live-test gap (`SaveVchFromXML` never validated; `Tran1` returns *no recordset* — semantics need documenting)
 
 ### H1 — The facade *(v1 surface for apps)*
-- [`007-erp-facade-rfc.md`](issues/007-erp-facade-rfc.md) — resource model, `/v1`, name-based codes, paging, transactions (`BeginTran`/`CommitTran`)
+- [`007-erp-facade-rfc.md`](issues/007-erp-facade-rfc.md) — resource model, `/v1`, name-based codes, paging, transactions (`BeginTran`/`CommitTran`) — **core/ops slice done (CLI `op`)**; HTTP `/v1` remains
 - [`005-multi-company-sessions.md`](issues/005-multi-company-sessions.md) — one `serve` process, many companies (today: bound to a single `--comp`)
-- [`004-remote-exposure-auth.md`](issues/004-remote-exposure-auth.md) — token auth + exposure policy (**gate for any remote use**)
+- ~~[`004-remote-exposure-auth.md`](issues/004-remote-exposure-auth.md)~~ — ✅ closed 2026-10-09 (token auth + exposure policy, live suite 09)
 
 ### H2 — Consumers
 - Web/mobile apps against `/v1` (blocked by H1 + 004).

@@ -1,6 +1,6 @@
 # 006 · Voucher write validation + Tran1 no-recordset semantics
 
-**Labels:** `tests` · **Effort:** S · **Status:** open · **Milestone:** H0
+**Labels:** `tests` · **Effort:** S · **Status:** closed (2026-10-09) · **Milestone:** H0
 
 ## Problem
 
@@ -35,9 +35,9 @@ not yet know which — that ambiguity is itself a documentation bug.
 
 ## Acceptance criteria
 
-- [ ] `tests/live/04-voucher-roundtrip.ps1` passes against DEMO and runs in `run-all.ps1`.
-- [ ] Missing-table vs empty-table behavior documented with observed evidence.
-- [ ] XML-mode and JSON-mode both exercised for the voucher path (at least read).
+- [x] `tests/live/04-voucher-roundtrip.ps1` passes against DEMO and runs in `run-all.ps1`.
+- [x] Missing-table vs empty-table behavior documented with observed evidence.
+- [x] XML-mode and JSON-mode both exercised for the voucher path (at least read).
 - [ ] CI note: unit tests cover the error-mapping change with a stub.
 
 ## Notes

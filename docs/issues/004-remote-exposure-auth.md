@@ -1,6 +1,6 @@
 # 004 · Remote exposure: auth & exposure policy
 
-**Labels:** `security` · **Effort:** M · **Status:** open · **Milestone:** H1 (gate for H2)
+**Labels:** `security` · **Effort:** M · **Status:** closed (2026-10-09) · **Milestone:** H1 (gate for H2)
 
 ## Problem
 

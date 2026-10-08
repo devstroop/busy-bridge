@@ -1,6 +1,6 @@
 # 003 · Guarded query (SQL safety modes)
 
-**Labels:** `security` · **Effort:** M · **Status:** open · **Milestone:** H0
+**Labels:** `security` · **Effort:** M · **Status:** closed (2026-10-09) · **Milestone:** H0
 
 ## Problem
 
