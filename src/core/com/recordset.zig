@@ -61,7 +61,11 @@ pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {
         break :blk null;
     };
     const rso = rs orelse {
-        self.setErr("GetRecordset returned vt={d} (no recordset)", .{result.vt});
+        // Evidence (issue #6): vt=0 for a missing table AND for a missing
+        // column alike — BUSY emits no SQL diagnostics, so the hint covers
+        // both. Successful queries (even empty ones) always return a
+        // recordset with rows:[].
+        self.setErr("GetRecordset returned vt={d} (no recordset): SQL could not run (missing table/column — BUSY gives no SQL error text)", .{result.vt});
         return error.NoRecordset;
     };
     defer _ = rso.vtbl.Release(rso);

@@ -93,6 +93,44 @@ position is also accepted unchanged).
 **JSON mode with busy-bridge returns XML-bearing results as parsed trees —
 never as escaped string blobs.**
 
+### GetRecordset semantics (observed against DEMO, issue #6)
+
+BUSY gives **no SQL diagnostics** — you must infer the failure from the shape
+of the result:
+
+| Query | Result | Evidence |
+|---|---|---|
+| SQL runs, rows exist | `ok:true` + rows | `SELECT Code FROM Master1 WHERE Name='Sundry Debtors'` → `rows:[{Code:116}]` |
+| SQL runs, **empty table** | `ok:true` + `rows:[]` | `SELECT TOP 1 VchCode FROM Tran1` (empty company) → `rows:[]`; `SELECT COUNT(*) FROM Tran1` → `n:0` |
+| **Missing table** | `code:"no_recordset"` | `SELECT TOP 1 X FROM NoSuchTableX` → `vt=0`, no error text |
+| **Missing column** | `code:"no_recordset"` — *same as missing table* | `SELECT Code FROM Tran1` (Tran1 has `VchCode`, not `Code`) → `vt=0` |
+
+- The bridge maps `VT_EMPTY` → machine code `no_recordset` with a hint that
+  the SQL could not run (unknown table/column). Missing table and missing
+  column are **indistinguishable** from the COM side.
+- **`LIKE` predicates silently return empty**: `Name LIKE 'Sundry%'` →
+  `rows:[]` even when `Name = 'Sundry Debtors'` matches. Use `=` / `IN`, or
+  fetch and filter client-side.
+- `Tran1` columns: `VchCode, VchType, Date, VchNo, VchSeriesCode,
+  MasterCode1/2…` (`Master1` uses `Code` — different key column).
+
+### Voucher round-trip recipe (issue #6, live test)
+
+`tests/live/04-voucher-roundtrip.ps1` exercises the full write path —
+`SaveVchFromXML` → row in `Tran1` → `GetVchXML` (JSON tree **and** raw XML
+passthrough) → `DeleteVchByCode` → gone:
+
+- **Voucher series are type-partitioned**: a SALE save (`p_VchType=9`)
+  needs a series *for type 9* — the default `09Main` series belongs to that
+  type; series for other types are rejected with `Invalid voucher series`.
+  `CreateVchSeries(name, type)` is the programmatic escape hatch, and the
+  created master is stored **type-prefixed**: `CreateVchSeries("ZigVch9",9)`
+  → `Master1` row `MasterType=21, Name='09ZigVch9'` (lookup accordingly).
+- MasterTypes used by the fixtures: item group **5**, item **6**,
+  voucher series **21**, account groups **1** (e.g. Sundry Debtors).
+- Prerequisites (party, STPT, unit, godown/MC names) are declared at the
+  top of the test — a test that encodes its own prerequisites is a fixture.
+
 ## The complete surface
 
 The old *BUSY Functions.docx* documented a fraction of what exists. Rel 14

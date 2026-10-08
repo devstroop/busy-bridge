@@ -209,7 +209,10 @@ pub fn valueFromVariant(self: *Session, vv: *const VARIANT) !json.Value {
             return .{ .str = s };
         },
         VT_DISPATCH, VT_UNKNOWN => {
-            return json.Value{ .str = "<dispatch>" };
+            // owned copy: every .str must be allocator-owned (freeing a
+            // static literal corrupts the heap — found via
+            // GetAllVchSeriesCodes returning a dispatch collection)
+            return .{ .str = try self.alloc.dupe(u8, "<dispatch>") };
         },
         VT_ERROR => return .null,
         else => return .null,

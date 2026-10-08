@@ -100,4 +100,6 @@ test "errCode" {
     try testing.expectEqualStrings("bad_document", errCode(error.BadDocument, &b));
     try testing.expectEqualStrings("open_db_failed", errCode(error.OpenDbFailed, &b));
     try testing.expectEqualStrings("unexpected_char", errCode(error.UnexpectedChar, &b));
+    // issue #6: unrunnable SQL -> distinct machine code
+    try testing.expectEqualStrings("no_recordset", errCode(error.NoRecordset, &b));
 }

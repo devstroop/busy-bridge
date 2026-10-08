@@ -6,7 +6,8 @@ $here = $PSScriptRoot
 $scripts = @(
     '01-roundtrip.ps1',
     '02-serve-defaults.ps1',
-    '03-wire-modes.ps1'
+    '03-wire-modes.ps1',
+    '04-voucher-roundtrip.ps1'
 )
 $failed = 0
 foreach ($t in $scripts) {
