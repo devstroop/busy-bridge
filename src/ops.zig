@@ -1,0 +1,74 @@
+//! COM orchestration shared by CLI commands and HTTP routes:
+//! open a company session, serialize a session's surface to JSON text.
+const std = @import("std");
+const json = @import("json.zig");
+const busyc = @import("com.zig");
+const cli_mod = @import("cli.zig");
+
+const Allocator = std.mem.Allocator;
+
+pub fn openSession(sess: *busyc.Session, o: cli_mod.OpenOpts) !void {
+    try sess.create(o.prog_id);
+    if (o.comp) |c| {
+        var open_args = [_]json.Value{ .{ .str = o.busy }, .{ .str = o.data }, .{ .str = c } };
+        var r = try sess.invoke("OpenDB", &open_args);
+        defer r.deinit(sess.alloc);
+        switch (r.ret) {
+            .bool => |b| if (!b) {
+                sess.setErr("OpenDB rejected company '{s}' in {s}", .{ c, o.data });
+                return error.OpenDbFailed;
+            },
+            else => {},
+        }
+    }
+}
+
+/// Serialize a session's IDispatch surface to JSON text.
+pub fn surfaceText(sess: *busyc.Session, alloc: Allocator, prog_id: []const u8, member_filter: ?[]const u8) ![]u8 {
+    const members = try sess.surface(alloc);
+    defer {
+        for (members) |*m| m.deinit(alloc);
+        alloc.free(members);
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var w = json.Writer{ .buf = &out, .alloc = alloc };
+    try w.raw("{\"prog_id\":");
+    try w.str(prog_id);
+    try w.raw(",\"count\":");
+    {
+        var b: [16]u8 = undefined;
+        try w.raw(std.fmt.bufPrint(&b, "{d}", .{members.len}) catch unreachable);
+    }
+    try w.raw(",\"members\":[");
+    var written: usize = 0;
+    for (members) |m| {
+        if (member_filter) |f| {
+            if (!std.ascii.eqlIgnoreCase(m.name, f)) continue;
+        }
+        if (written != 0) try w.raw(",");
+        written += 1;
+        try w.raw("{\"name\":");
+        try w.str(m.name);
+        try w.raw(",\"kind\":");
+        try w.str(m.kind);
+        try w.raw(",\"nparams\":");
+        {
+            var b: [16]u8 = undefined;
+            try w.raw(std.fmt.bufPrint(&b, "{d}", .{m.nparams}) catch unreachable);
+        }
+        try w.raw(",\"nopt\":");
+        {
+            var b: [16]u8 = undefined;
+            try w.raw(std.fmt.bufPrint(&b, "{d}", .{m.nopt}) catch unreachable);
+        }
+        try w.raw(",\"params\":[");
+        for (m.params, 0..) |p, i| {
+            if (i != 0) try w.raw(",");
+            try w.str(p);
+        }
+        try w.raw("]}");
+    }
+    try w.raw("]}");
+    return out.toOwnedSlice(alloc);
+}
