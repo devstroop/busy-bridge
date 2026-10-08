@@ -1,11 +1,12 @@
 //! HTTP JSON API (`serve` command): request parsing, routing, responses.
 const std = @import("std");
-const json = @import("json.zig");
-const busyc = @import("com.zig");
-const helpers = @import("helpers.zig");
+const json = @import("../util/json.zig");
+const busyc = @import("../core/com.zig");
+const helpers = @import("../util/helpers.zig");
 const cli_mod = @import("cli.zig");
-const ops = @import("ops.zig");
-const registry = @import("registry.zig");
+const ops = @import("../core/ops.zig");
+const registry = @import("../core/registry.zig");
+const envelope = @import("envelope.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -14,8 +15,8 @@ const Cli = cli_mod.Cli;
 const eql = helpers.eql;
 const startsWithCi = helpers.startsWithCi;
 const printOut = helpers.printOut;
-const errJsonText = helpers.errJsonText;
-const okWrap = helpers.okWrap;
+const errJsonText = envelope.errJsonText;
+const okWrap = envelope.okWrap;
 const optsFrom = cli_mod.optsFrom;
 const openSession = ops.openSession;
 const surfaceText = ops.surfaceText;

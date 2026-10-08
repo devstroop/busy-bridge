@@ -13,9 +13,7 @@
 //!
 //! This entry point only collects argv; command logic lives in commands.zig.
 const std = @import("std");
-const commands = @import("commands.zig");
-const cli_mod = @import("cli.zig");
-const helpers = @import("helpers.zig");
+const commands = @import("transport/commands.zig");
 
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
@@ -38,9 +36,5 @@ pub fn main(init: std.process.Init) !u8 {
         alloc.free(items);
     }
 
-    if (items.len == 0) {
-        try helpers.printOut(io, alloc, cli_mod.Usage);
-        return 1;
-    }
     return commands.run(io, alloc, .{ .items = items });
 }

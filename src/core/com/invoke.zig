@@ -1,7 +1,7 @@
 //! COM invocation: JSON args -> VARIANT marshaling, IDispatch::Invoke,
 //! result/out-param values back to JSON.
 const std = @import("std");
-const json = @import("../json.zig");
+const json = @import("../../util/json.zig");
 const Session = @import("session.zig").Session;
 const win32 = @import("win32.zig");
 const utf16 = @import("utf16.zig");

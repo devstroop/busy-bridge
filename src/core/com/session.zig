@@ -4,7 +4,7 @@
 //! modules and are re-exposed as Session methods through thin wrappers so
 //! external call sites (`sess.invoke(...)`) stay stable.
 const std = @import("std");
-const json = @import("../json.zig");
+const json = @import("../../util/json.zig");
 const win32 = @import("win32.zig");
 const utf16 = @import("utf16.zig");
 const surface_mod = @import("surface.zig");

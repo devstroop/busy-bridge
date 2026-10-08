@@ -68,6 +68,11 @@ jobs:
         if: runner.os == 'Linux'
         run: zig fmt --check build.zig src
 
+      # Layer rules: util has no BUSY knowledge; core never imports transport.
+      - name: Check layer boundaries
+        shell: pwsh
+        run: ./scripts/check_layers.ps1
+
       # Cross-compiles x86-windows-gnu on Linux; native on Windows.
       - name: Build
         run: zig build

@@ -1,5 +1,6 @@
-//! CLI surface: usage text, option defaults, argument access, open options.
+//! CLI surface: usage text, option defaults, argument access.
 const std = @import("std");
+const ops = @import("../core/ops.zig");
 
 pub const DEFAULT_PROG = "Busy2L21.CFixedInterface";
 pub const DEFAULT_BUSY = "C:\\BusyWin\\";
@@ -42,14 +43,7 @@ pub const Cli = struct {
     }
 };
 
-pub const OpenOpts = struct {
-    prog_id: []const u8,
-    busy: []const u8,
-    data: []const u8,
-    comp: ?[]const u8,
-};
-
-pub fn optsFrom(cli: Cli) OpenOpts {
+pub fn optsFrom(cli: Cli) ops.OpenOpts {
     return .{
         .prog_id = cli.getOr("--prog-id", DEFAULT_PROG),
         .busy = cli.getOr("--busy", DEFAULT_BUSY),

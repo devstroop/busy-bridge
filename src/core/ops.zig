@@ -1,13 +1,20 @@
 //! COM orchestration shared by CLI commands and HTTP routes:
 //! open a company session, serialize a session's surface to JSON text.
 const std = @import("std");
-const json = @import("json.zig");
+const json = @import("../util/json.zig");
 const busyc = @import("com.zig");
-const cli_mod = @import("cli.zig");
 
 const Allocator = std.mem.Allocator;
 
-pub fn openSession(sess: *busyc.Session, o: cli_mod.OpenOpts) !void {
+/// Options to open a BUSY company session (domain-level, not CLI-specific).
+pub const OpenOpts = struct {
+    prog_id: []const u8,
+    busy: []const u8,
+    data: []const u8,
+    comp: ?[]const u8,
+};
+
+pub fn openSession(sess: *busyc.Session, o: OpenOpts) !void {
     try sess.create(o.prog_id);
     if (o.comp) |c| {
         var open_args = [_]json.Value{ .{ .str = o.busy }, .{ .str = o.data }, .{ .str = c } };

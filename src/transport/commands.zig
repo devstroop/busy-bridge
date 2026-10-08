@@ -2,13 +2,14 @@
 //! query/call); `serve` delegates to http.zig.
 const std = @import("std");
 const builtin = @import("builtin");
-const json = @import("json.zig");
-const busyc = @import("com.zig");
-const helpers = @import("helpers.zig");
+const json = @import("../util/json.zig");
+const busyc = @import("../core/com.zig");
+const helpers = @import("../util/helpers.zig");
 const cli_mod = @import("cli.zig");
-const ops = @import("ops.zig");
-const registry = @import("registry.zig");
+const ops = @import("../core/ops.zig");
+const registry = @import("../core/registry.zig");
 const http = @import("http.zig");
+const envelope = @import("envelope.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -17,8 +18,8 @@ const Cli = cli_mod.Cli;
 const eql = helpers.eql;
 const b64Decode = helpers.b64Decode;
 const printOut = helpers.printOut;
-const errJsonText = helpers.errJsonText;
-const okWrap = helpers.okWrap;
+const errJsonText = envelope.errJsonText;
+const okWrap = envelope.okWrap;
 const Usage = cli_mod.Usage;
 const optsFrom = cli_mod.optsFrom;
 const openSession = ops.openSession;
@@ -27,6 +28,10 @@ const listBusyClasses = registry.listBusyClasses;
 
 /// Route a parsed argv to its command. `cli.items[0]` is the command name.
 pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
+    if (cli.items.len == 0) {
+        try printOut(io, alloc, Usage);
+        return 1;
+    }
     const cmd = cli.items[0];
     if (eql(cmd, "help") or eql(cmd, "--help") or eql(cmd, "-h")) {
         try printOut(io, alloc, Usage);
