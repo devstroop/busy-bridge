@@ -1,0 +1,4 @@
+# zig fmt normalizes to LF; keep working trees LF regardless of
+# developer core.autocrlf settings so `zig fmt --check` is stable everywhere.
+*.zig text eol=lf
+*.yml text eol=lf

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZIG_VERSION: "0.17.0"
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Official tarball + sha256 verified against ziglang.org's index.json.
+      - name: Install Zig (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://ziglang.org/download/index.json -o index.json
+          tarball=$(jq -r --arg v "$ZIG_VERSION" '.[$v]["x86_64-linux"].tarball' index.json)
+          shasum=$(jq -r --arg v "$ZIG_VERSION" '.[$v]["x86_64-linux"].shasum' index.json)
+          echo "fetching $tarball"
+          curl -fsSL "$tarball" -o zig.tar.xz
+          echo "$shasum  zig.tar.xz" | sha256sum -c -
+          mkdir -p "$HOME/.local/zig"
+          tar -xJf zig.tar.xz -C "$HOME/.local/zig" --strip-components=1
+          echo "$HOME/.local/zig" >> "$GITHUB_PATH"
+
+      - name: Install Zig (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $idx = Invoke-RestMethod https://ziglang.org/download/index.json
+          $e = $idx.$env:ZIG_VERSION.'x86_64-windows'
+          Write-Host "fetching $($e.tarball)"
+          Invoke-WebRequest -Uri $e.tarball -OutFile zig.zip
+          $hash = (Get-FileHash zig.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $e.shasum.ToLower()) { throw "checksum mismatch: got $hash want $($e.shasum)" }
+          $dest = Join-Path $env:RUNNER_TEMP 'zig'
+          Expand-Archive zig.zip -DestinationPath $dest
+          $extracted = (Get-ChildItem $dest -Directory | Select-Object -First 1).FullName
+          Add-Content $env:GITHUB_PATH $extracted
+
+      - name: Verify Zig
+        shell: bash
+        run: zig version
+
+      # Sources must be LF + fmt-clean (see .gitattributes); ubuntu checkout is LF.
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: zig fmt --check build.zig src
+
+      # Cross-compiles x86-windows-gnu on Linux; native on Windows.
+      - name: Build
+        run: zig build
+
+      # Run the real binary: version + registry enumeration (no BUSY needed).
+      - name: Smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = & 'zig-out\bin\busy-bridge.exe' version
+          Write-Output $v
+          if ($LASTEXITCODE -ne 0 -or $v -notmatch '0\.1\.0') { throw "version smoke failed: $v" }
+          $c = & 'zig-out\bin\busy-bridge.exe' classes
+          if ($LASTEXITCODE -ne 0) { throw 'classes smoke failed' }
+          Write-Output ($c.Substring(0, [Math]::Min(160, $c.Length)))
