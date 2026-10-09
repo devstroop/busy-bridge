@@ -25,7 +25,12 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
+      # Full history + tags: build.zig derives the release version from
+      # `git describe` — a shallow checkout has no tags and the version
+      # degrades to a bare commit SHA (which rightly fails the smoke test).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Official tarball + sha256 verified against ziglang.org's index.json.
       - name: Install Zig (Linux)
@@ -120,7 +125,11 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
+      # Same full-history rationale as the build job: version injection
+      # needs tags even though replay tests never print the version.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Zig (Linux)
         if: runner.os == 'Linux'
