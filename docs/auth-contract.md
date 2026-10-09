@@ -49,11 +49,15 @@ Rules:
   2. `CheckIfLoginDetRequired(user)` (`COtherServices1`) — verified:
      `true` for admin and user1, `true` for unknown users too (no user
      enumeration),
-  3. `ValidUserNamePasswrdForParty(user, pwd, …)` (`COtherServices1`) —
-     the regular-user credential check; **currently blocked on the
-     bridge growing typed-ByRef marshaling** (`VT_BSTR|BYREF` etc.;
-     report §4). The login endpoint does not ship until one positive
-     and one negative fixture pass,
+  3. **Regular-user credential check — TBD (iteration 6).**
+     `ValidUserNamePasswrdForParty` was the candidate but is
+     **proven mobile-app-gated** by BUSY's own error message (report
+     §5) — out of the path. Candidates under probe: `GetUserList` /
+     `GetUserProfile` (BusyExt21.COtherServices) and the common-DB
+     user table (`GetRecordsetFromCompanyDB`/`ExecuteQueryInADOForSQL`;
+     `UserControl` per the archive common-tables list).
+     **The login endpoint does not ship until a regular-user
+     credential primitive passes a +/− fixture pair.**
   4. `GetCompConfigJSON(skipBranch, fy, false)` (`CFixedInterface1`)
      → `config` payload.
 - Attribution identity of a headless COM session is the configured
@@ -127,12 +131,14 @@ policy is reported in `/info` (`"auth_mode": "off|token|session"`).
 
 ## 6. Open items (fixture/blocker-dependent)
 
-1. **Typed-ByRef marshaling** in `core/com/invoke`
-   (`{"$byref":…,"$vt":"bstr|bool|dispatch"}`) — unblocks
-   `ValidUserNamePasswrdForParty` (login), `CheckUserRightsForReports`
-   (rights), `GetJSON2*`/`SaveVchFromJson` ByRef params (writes) and
-   the approval probe. Top bridge task (report §4).
-2. Per-user rights capture for regular users (post-ByRef fix).
+1. **Regular-user credential primitive** (iteration 6): probe
+   `GetUserList`/`GetUserProfile` (BusyExt21.COtherServices) and the
+   common-DB user table (`GetRecordsetFromCompanyDB`,
+   `UserControl`); exclude `CheckCSUserPwd`/`IsCSLoginExists` if
+   cloud-sync-gated. Typed-ByRef (`$byref` markers `bstr|bool|dispatch`)
+   has landed and is available for all of these probes.
+2. `GetJSON2*`/`SaveVchFromJson` remaining param shapes (0x80020005
+   persists on non-ByRef params; matrix next iteration).
 3. Audit hooks: `SaveLogInLogOutUserLog` / `SaveUserLOG` activation
    (BUSY-023) — verify headless first.
 4. Multi-FY sessions: `fy` semantics for `OpenDBForYear` once

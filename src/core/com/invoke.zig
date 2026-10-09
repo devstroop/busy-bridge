@@ -13,6 +13,7 @@ const DISPPARAMS = win32.DISPPARAMS;
 const IID_NULL = win32.IID_NULL;
 const VariantClear = win32.VariantClear;
 const SysAllocString = win32.SysAllocString;
+const SysFreeString = win32.SysFreeString;
 const SysStringLen = win32.SysStringLen;
 const DISP_E_PARAMNOTFOUND = win32.DISP_E_PARAMNOTFOUND;
 const DISP_E_EXCEPTION = win32.DISP_E_EXCEPTION;
@@ -41,13 +42,35 @@ const fromUtf16 = utf16.fromUtf16;
 
 pub const CallResult = @import("result.zig").CallResult;
 
+/// $byref box kinds (issue #7 M3 + iteration-5 typed VB6 ByRef).
+pub const ByrefKind = enum { variant, f8, i4, cy, i8, bstr, bool, dispatch };
+
+/// Pure marker parsing (unit-tested): $byref string -> box kind.
+pub fn byrefKindFromMarker(s: []const u8) ?ByrefKind {
+    if (s.len == 0) return .variant;
+    if (std.mem.eql(u8, s, "f8")) return .f8;
+    if (std.mem.eql(u8, s, "i4")) return .i4;
+    if (std.mem.eql(u8, s, "cy")) return .cy;
+    if (std.mem.eql(u8, s, "i8")) return .i8;
+    if (std.mem.eql(u8, s, "bstr")) return .bstr;
+    if (std.mem.eql(u8, s, "bool")) return .bool;
+    if (std.mem.eql(u8, s, "dispatch")) return .dispatch;
+    return null;
+}
+
 /// Invoke method by name. JSON args are mapped to Variant params.
 /// Markers (issue #7 M3 — services-class params are TYPED, not Variant):
 ///   {"$byref": ""}         -> VT_BYREF|VT_VARIANT (As Variant params)
 ///   {"$byref": "f8"|"i4"|"cy"|"i8"} -> typed out-param boxes (As
 ///                              Double/Long/Currency/LongLong)
+///   {"$byref": "bstr"|"bool"|"dispatch"} -> typed out-param boxes (As
+///                              String/Boolean/Object — VB6-style typed
+///                              ByRef; iteration-5 report §4: unblocks
+///                              ValidUserNamePasswrdForParty & friends)
 ///   {"$date": "YYYY-MM-DD"} -> VT_DATE input (report date params)
-/// Typed/Variant post-call values are returned in `outs`.
+/// Typed/Variant post-call values are returned in `outs`. Typed box
+/// read-back: bstr -> string ("" when the callee wrote none; the BSTR
+/// is freed), bool -> boolean, dispatch -> "<dispatch>" (released) or "".
 pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
     const d = self.disp orelse return error.NoDispatch;
     var wname: [256]u16 = undefined;
@@ -65,7 +88,6 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     // VT_ERROR/DISP_E_PARAMNOTFOUND makes BUSY return E_INVALIDARG.
     const n = args.len;
 
-    const ByrefKind = enum { variant, f8, i4, cy, i8 };
     var storage = try self.alloc.alloc(VARIANT, @intCast(n));
     defer self.alloc.free(storage);
     var byref_slots = try self.alloc.alloc(VARIANT, @intCast(n));
@@ -81,6 +103,12 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     defer self.alloc.free(i4box);
     var i8box = try self.alloc.alloc(i64, @intCast(n));
     defer self.alloc.free(i8box);
+    var bstrbox = try self.alloc.alloc(?[*:0]u16, @intCast(n));
+    defer self.alloc.free(bstrbox);
+    var boolbox = try self.alloc.alloc(i16, @intCast(n));
+    defer self.alloc.free(boolbox);
+    var dispbox = try self.alloc.alloc(?*win32.IDispatch, @intCast(n));
+    defer self.alloc.free(dispbox);
     for (0..@as(usize, @intCast(n))) |i| {
         storage[i] = VARIANT.init();
         byref_slots[i] = VARIANT.init();
@@ -89,6 +117,9 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
         f8box[i] = 0;
         i4box[i] = 0;
         i8box[i] = 0;
+        bstrbox[i] = null;
+        boolbox[i] = 0;
+        dispbox[i] = null;
     }
 
     // Fill in logical order; free on error.
@@ -118,35 +149,57 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                     continue;
                 }
                 if (a.get("$byref")) |inner| {
-                    if (inner.* == .str and inner.str.len > 0) {
-                        // typed box marker (services-class typed params)
-                        if (std.mem.eql(u8, inner.str, "f8")) {
+                    // Typed box marker (services-class typed params) or
+                    // empty/absent marker -> Variant-byref seeded by value.
+                    const kind: ByrefKind = if (inner.* == .str)
+                        byrefKindFromMarker(inner.str) orelse {
+                            self.setErr("unknown $byref marker '{s}' (use \"\", f8, i4, cy, i8, bstr, bool, dispatch)", .{inner.str});
+                            return error.BadArgs;
+                        }
+                    else
+                        .variant;
+                    switch (kind) {
+                        .variant => {
+                            try variantFromValue(self, inner, &byref_slots[i]);
+                            storage[i].vt = VT_BYREF | VT_VARIANT;
+                            storage[i].data.byref = &byref_slots[i];
+                        },
+                        .f8 => {
                             storage[i].vt = VT_BYREF | VT_R8;
                             storage[i].data.byref = &f8box[i];
                             byref_kind[i] = .f8;
-                        } else if (std.mem.eql(u8, inner.str, "i4")) {
+                        },
+                        .i4 => {
                             storage[i].vt = VT_BYREF | VT_I4;
                             storage[i].data.byref = &i4box[i];
                             byref_kind[i] = .i4;
-                        } else if (std.mem.eql(u8, inner.str, "cy")) {
+                        },
+                        .cy => {
                             storage[i].vt = VT_BYREF | VT_CY;
                             storage[i].data.byref = &i8box[i];
                             byref_kind[i] = .cy;
-                        } else if (std.mem.eql(u8, inner.str, "i8")) {
+                        },
+                        .i8 => {
                             storage[i].vt = VT_BYREF | VT_I8;
                             storage[i].data.byref = &i8box[i];
                             byref_kind[i] = .i8;
-                        } else {
-                            self.setErr("unknown $byref marker '{s}' (use \"\", f8, i4, cy, i8)", .{inner.str});
-                            return error.BadArgs;
-                        }
-                        is_byref[i] = true;
-                        filled += 1;
-                        continue;
+                        },
+                        .bstr => {
+                            storage[i].vt = VT_BYREF | VT_BSTR;
+                            storage[i].data.byref = @ptrCast(&bstrbox[i]);
+                            byref_kind[i] = .bstr;
+                        },
+                        .bool => {
+                            storage[i].vt = VT_BYREF | VT_BOOL;
+                            storage[i].data.byref = &boolbox[i];
+                            byref_kind[i] = .bool;
+                        },
+                        .dispatch => {
+                            storage[i].vt = VT_BYREF | VT_DISPATCH;
+                            storage[i].data.byref = @ptrCast(&dispbox[i]);
+                            byref_kind[i] = .dispatch;
+                        },
                     }
-                    try variantFromValue(self, inner, &byref_slots[i]);
-                    storage[i].vt = VT_BYREF | VT_VARIANT;
-                    storage[i].data.byref = &byref_slots[i];
                     is_byref[i] = true;
                     filled += 1;
                     continue;
@@ -180,6 +233,18 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     hr = d.vtbl.Invoke(d, dispid, &IID_NULL, 0, 1, &dp, &result, null, null); // DISPATCH_METHOD
     if (hr < 0) {
         _ = VariantClear(&result);
+        // The callee may have written into typed boxes before failing -
+        // release anything they hold, then surface the error.
+        for (0..@as(usize, @intCast(n))) |i| {
+            if (bstrbox[i]) |bp| {
+                SysFreeString(bp);
+                bstrbox[i] = null;
+            }
+            if (dispbox[i]) |p| {
+                _ = p.vtbl.Release(p);
+                dispbox[i] = null;
+            }
+        }
         if (hr == DISP_E_EXCEPTION) self.loadErrorInfo() else self.setErr("Invoke('{s}') failed 0x{x}", .{ method, @as(u32, @bitCast(hr)) });
         return error.InvokeFailed;
     }
@@ -204,6 +269,24 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                 .i4 => json.Value{ .int = i4box[i] },
                 .cy => json.Value{ .float = @as(f64, @floatFromInt(i8box[i])) / 10000.0 }, // VT_CY scale
                 .i8 => json.Value{ .int = i8box[i] },
+                .bstr => blk: {
+                    const bp = bstrbox[i] orelse break :blk json.Value{ .str = "" };
+                    const len = SysStringLen(bp);
+                    const s = try fromUtf16(self.alloc, bp, len);
+                    SysFreeString(bp);
+                    bstrbox[i] = null;
+                    break :blk json.Value{ .str = s };
+                },
+                .bool => json.Value{ .bool = boolbox[i] != 0 },
+                .dispatch => blk: {
+                    // Ownership: the callee AddRef'd into our box; we
+                    // Release exactly once. Contents need collection
+                    // enumeration (future work) - surface the handle.
+                    const p = dispbox[i] orelse break :blk json.Value{ .str = "" };
+                    _ = p.vtbl.Release(p);
+                    dispbox[i] = null;
+                    break :blk json.Value{ .str = try self.alloc.dupe(u8, "<dispatch>") };
+                },
             };
             try outs.append(self.alloc, v);
         } else {
@@ -286,4 +369,22 @@ pub fn valueFromVariant(self: *Session, vv: *const VARIANT) !json.Value {
         VT_ERROR => return .null,
         else => return .null,
     }
+}
+
+// ---------------- tests (pure) ----------------
+
+const testing = std.testing;
+
+test "byrefKindFromMarker maps every $byref marker" {
+    try testing.expectEqual(ByrefKind.variant, byrefKindFromMarker("").?);
+    try testing.expectEqual(ByrefKind.f8, byrefKindFromMarker("f8").?);
+    try testing.expectEqual(ByrefKind.i4, byrefKindFromMarker("i4").?);
+    try testing.expectEqual(ByrefKind.cy, byrefKindFromMarker("cy").?);
+    try testing.expectEqual(ByrefKind.i8, byrefKindFromMarker("i8").?);
+    // iteration-5 typed VB6 ByRef (login/rights/write contracts):
+    try testing.expectEqual(ByrefKind.bstr, byrefKindFromMarker("bstr").?);
+    try testing.expectEqual(ByrefKind.bool, byrefKindFromMarker("bool").?);
+    try testing.expectEqual(ByrefKind.dispatch, byrefKindFromMarker("dispatch").?);
+    try testing.expect(null == byrefKindFromMarker("bogus"));
+    try testing.expect(null == byrefKindFromMarker("BSTr")); // case-sensitive
 }
