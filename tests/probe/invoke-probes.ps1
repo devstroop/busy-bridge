@@ -7,18 +7,41 @@ param(
     [string]$Bridge = (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'zig-out\bin\busy-bridge.exe'),
     [string]$Manifest = (Join-Path $PSScriptRoot 'probes.json'),
     [string]$Comp = 'COMP0001',
+    [string]$DataPath = 'C:\BusyWin\DATA',
     [int]$DefaultTimeout = 25,
-    [string]$Filter = ''
+    [string]$Filter = '',
+    [switch]$SkipLockCheck
 )
 $ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 if (-not (Test-Path $Bridge)) { throw "bridge not built - run zig build ($Bridge)" }
-$run = Join-Path $PSScriptRoot ('results\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $run -Force | Out-Null
 $mf = Get-Content $Manifest -Raw | ConvertFrom-Json
 $probes = @($mf.probes | Where-Object { $_.id -match $Filter })
 if ($probes.Count -eq 0) { throw "no probes matched filter '$Filter'" }
+
+# Collision guard: opening a company that the BUSY GUI (or another headless
+# session) already holds crashes BUSY (file-lock contention, observed).
+# Refuse to run comp-gated probes while the company files reject an
+# exclusive open. Skip with -SkipLockCheck only when you know better.
+if (-not $SkipLockCheck -and @($probes | Where-Object { $_.useComp }).Count -gt 0) {
+    $compDir = Join-Path $DataPath $Comp
+    $locked = @()
+    foreach ($file in @(Get-ChildItem $compDir -File -ErrorAction SilentlyContinue)) {
+        try {
+            $fs = [IO.File]::Open($file.FullName, 'Open', 'ReadWrite', 'None')
+            $fs.Close()
+        } catch { $locked += $file.Name }
+    }
+    if ($locked.Count -gt 0) {
+        throw ("company '$Comp' files are held open ($($locked.Count)/$(@(Get-ChildItem $compDir -File).Count) locked, e.g. $($locked[0])) - " +
+               "close it in the BUSY GUI (or stop other headless sessions) first; -SkipLockCheck overrides at your own risk")
+    }
+    Write-Output "lock check OK: $compDir accepts exclusive opens (no session holds '$Comp')"
+}
+
+$run = Join-Path $PSScriptRoot ('results\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Path $run -Force | Out-Null
 
 $summary = @()
 foreach ($p in $probes) {

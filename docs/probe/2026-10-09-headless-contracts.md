@@ -104,14 +104,51 @@ runs them with `useComp: true`.
 | Rights normalization (`/auth/me`) | **blocked** on a mobile-user fixture in the company + UDT marshaling |
 | Company/FY picker (`GetCompList` + fin-years + `GetCompConfigJSON`) | **GO** — config JSON directly usable; collections need bridge enumeration support |
 
-## 4. Next probes (iteration 4, on the BUSY machine)
+## 4. Iteration 4 — regular-user pivot (2026-10-10)
 
-1. Create a mobile user + rights + a master range in the BUSY GUI; re-run
-   the rights group; capture the real `GetMobileUserRightsJSONstr` shape
-   (VT_RECORD work or a JSON-accepting twin).
-2. One-param-at-a-time `SaveVchFromJson` matrix (bool vs int, byref
-   inner types, `p_ErrCode` as int-byref).
-3. Collection enumeration for the bridge (walk `_Collection` COM objects)
-   → unblocks `GetCompList`/fin-years/day-book/ledger probes.
-4. Investigate the 10 s cold `OpenDB`.
+Operator configuration: super user `admin/admin`, regular user
+`user1/password`; **mobile-app category deliberately unused** (BDEP
+friction — decision recorded here and in the auth contract). GUI closed
+before the run; the new lock pre-flight in `invoke-probes.ps1`
+verified the company free first. Run: 35 probes, OK=18.
+
+**Verified login contract booleans (regular users):**
+
+| Primitive (host class) | admin | user1 | unknown |
+|---|---|---|---|
+| `CheckIfLoginDetRequired` (COtherServices1) | `true` | `true` | `true` (indistinguishable — no user enumeration) |
+| `ChkIfMobileUser` (CMasterServices) | `false` | `false` | — |
+| `MobileUserNameExists` (CFixedInterface1) | `false` | — | — |
+| `GetCurrentUserName` (headless COM) | **`"Admin"`** — attribution identity is the configured super user | | |
+
+**Trap reclassification:** `SelectUser` returns `null` and `AskYesNo`
+returns `false` immediately headless (no UI main-loop → fail-fast, not
+hang); `ShowMsg` fails `DISP_E_PARAMNOTFOUND` (arg-count guess, not a
+hang). The earlier TIMEOUT verdicts were **false positives**: the 8 s
+trap timeout fired inside the then-~10 s lock-wait `OpenDB`, before the
+invoke ran. The genuine, iteration-spanning UI trap is exactly one:
+**`CheckIfLoginDetRequiredFromDatabase`**.
+
+**OpenDB timing explained:** cold `OpenDB` dropped from ~10 s to
+~4.2 s after the operator closed BUSY cleanly — the old 10 s was
+lock-wait residue from the force-killed serve. No mystery left.
+
+**The one remaining login blocker — typed ByRef marshaling:**
+`ValidUserNamePasswrdForParty` (the regular-user credential check) and
+`CheckUserRightsForReports` fail `DISP_E_TYPEMISMATCH` (0x80020005) on
+every shape tried. Root cause: their type-library entries declare
+concrete VB6 types (`string`, `_Collection`, `bool`) whose *default*
+passing is typed ByRef (`VT_BSTR|BYREF`, `VT_DISPATCH|BYREF`,
+`VT_BOOL`), while the bridge's `{"$byref":…}` only produces
+`VT_VARIANT|BYREF` (which works on `CFixedInterface` methods because
+their params are declared `Variant`). Fix: extend the bridge `$byref`
+wrapper with a type tag (e.g. `{"$byref":"", "$vt":"bstr"}`) in
+`core/com/invoke` — unblocks VUP, report-rights, the `GetJSON2*`
+helpers, `SaveVchFromJson`'s ByRef err params and the approval probe in
+one stroke. **Until it lands the login contract is GO-but-unverifiable.**
+
+Remaining iteration-5 items: typed-ByRef shape verification (post-fix),
+`GetCollectionObj` chaining idea for `_Collection` args, `ShowMsg`
+arg-count correction, `SaveVchFromJson` matrix (post-ByRef).
+
 

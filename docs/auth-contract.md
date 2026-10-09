@@ -42,14 +42,27 @@ Rules:
 ```
 - `comp` required (credential validation needs an open company —
   probe-verified); `fy` optional (0 = current).
-- Validation path (all probe-verified on their host class):
+- Validation path (probe-verified on their host class; regular BUSY
+  company users — **no mobile-app/BDEP dependency** by operator
+  decision, iteration-4 report §4):
   1. open company (`OpenDB`, existing session machinery),
-  2. `ValidMobileUserPassword(user, pwd)` (`CMasterServices`),
-  3. `CheckIfLoginDetRequired(user)` (`COtherServices1`) for the
-     login-required policy,
+  2. `CheckIfLoginDetRequired(user)` (`COtherServices1`) — verified:
+     `true` for admin and user1, `true` for unknown users too (no user
+     enumeration),
+  3. `ValidUserNamePasswrdForParty(user, pwd, …)` (`COtherServices1`) —
+     the regular-user credential check; **currently blocked on the
+     bridge growing typed-ByRef marshaling** (`VT_BSTR|BYREF` etc.;
+     report §4). The login endpoint does not ship until one positive
+     and one negative fixture pass,
   4. `GetCompConfigJSON(skipBranch, fy, false)` (`CFixedInterface1`)
      → `config` payload.
+- Attribution identity of a headless COM session is the configured
+  super user (`GetCurrentUserName` → `"Admin"`) — session writes are
+  attributed to the **validated request username**, never to this.
 - `CheckIfLoginDetRequiredFromDatabase` is a **UI trap** — never used.
+  `ValidMobileUserPassword`/`GetMobileUserRightsJSONstr` (mobile-user
+  category) are **out of scope** — the operator model is regular
+  company users only.
 - Failures: `invalid_credentials` (401) — **identical response for
   unknown user and wrong password**; `company_not_found` (404);
   `busy_rejected` for primitive refusals.
@@ -76,10 +89,13 @@ Records BUSY-side login/logout where the verified primitive allows.
   "can_authorise": false
 }
 ```
-- Provisional: until the mobile-user fixture lands (BUSY-002
-  iteration 4), `rights` for **non-admin** users is derived deny-all
-  with explicit allow-lists once `GetMobileUserRightsJSONstr` shape is
-  captured. Admin (`Busy`) receives full rights.
+- Provisional: rights for **regular users** come from BUSY's own
+  per-user rights (candidate primitive `CheckUserRightsForReports` on
+  `COtherServices1` — shape pending the typed-ByRef fix, report §4).
+  The mobile-user rights UDT (`GetMobileUserRightsJSONstr`) is out of
+  scope (no BDEP). Until per-user rights are captured, non-super users
+  receive deny-all with explicit allow-lists; the super user
+  (`admin`) receives full rights.
 - Enforcement point: single policy layer on `/v1` + `/op` (BUSY-012).
   Unknown/malformed rights ⇒ **deny**. The client may hide UI by
   rights, but the server never trusts the client's copy.
@@ -111,9 +127,13 @@ policy is reported in `/info` (`"auth_mode": "off|token|session"`).
 
 ## 6. Open items (fixture/blocker-dependent)
 
-1. `GetMobileUserRightsJSONstr` UDT shape → real per-user rights
-   mapping (BUSY-002 iteration 4 + VT_RECORD marshaling).
-2. Audit hooks: `SaveLogInLogOutUserLog` / `SaveUserLOG` activation
+1. **Typed-ByRef marshaling** in `core/com/invoke`
+   (`{"$byref":…,"$vt":"bstr|bool|dispatch"}`) — unblocks
+   `ValidUserNamePasswrdForParty` (login), `CheckUserRightsForReports`
+   (rights), `GetJSON2*`/`SaveVchFromJson` ByRef params (writes) and
+   the approval probe. Top bridge task (report §4).
+2. Per-user rights capture for regular users (post-ByRef fix).
+3. Audit hooks: `SaveLogInLogOutUserLog` / `SaveUserLOG` activation
    (BUSY-023) — verify headless first.
-3. Multi-FY sessions: `fy` semantics for `OpenDBForYear` once
+4. Multi-FY sessions: `fy` semantics for `OpenDBForYear` once
    enumeration (Collection marshaling) lands (BUSY-004).
