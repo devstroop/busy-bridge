@@ -401,6 +401,7 @@ zig fmt --check .    # formatting
 powershell scripts/check_layers.ps1   # layer boundaries
 powershell scripts/check_size.ps1     # structure gate: src ≤400, tests ≤200 lines
                                       #   (-ReportOnly to preview; enforcement default)
+powershell scripts/check_tests.ps1    # test-discovery gate: exact count (73)
 ```
 
 **Structure gates** (both enforced): `check_layers.ps1` (dependency

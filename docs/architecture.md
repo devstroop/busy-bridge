@@ -125,4 +125,6 @@ never touch sockets.
 History: the restructure that produced this layout is issue
 [`011-source-restructure.md`](issues/011-source-restructure.md); the
 repo-split decision record (COM lib vs server — deferred, triggers) is
-in [`roadmap.md`](roadmap.md).
+in [`roadmap.md`](roadmap.md). The evidence file for the *next* split
+into separate project(s) — self-containment audit, import matrix, test
+distribution — is [`separation-readiness.md`](separation-readiness.md).

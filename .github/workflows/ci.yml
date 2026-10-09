@@ -88,6 +88,13 @@ jobs:
         if: runner.os == 'Windows'
         run: zig build test
 
+      # Test-discovery gate: assert the EXACT discovered count (issue 011
+      # lesson — 26 tests silently stopped running when aggregation broke).
+      - name: Check test discovery count
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/check_tests.ps1
+
       # Run the real binary: version + registry enumeration (no BUSY needed).
       - name: Smoke test
         if: runner.os == 'Windows'
