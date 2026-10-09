@@ -30,6 +30,14 @@ pub const OpenOpts = struct {
 
 pub fn openSession(sess: *busyc.Session, o: OpenOpts) !void {
     try sess.create(o.prog_id);
+    try openCompany(sess, o);
+}
+
+/// Open (or switch to) a company on an existing dispatch (issue #5).
+/// Same logic as the body of the old openSession: OpenDB when the class
+/// has it, otherwise a transient fixed-interface aux session (the company
+/// state lives in the COM server for this process and outlives the opener).
+pub fn openCompany(sess: *busyc.Session, o: OpenOpts) !void {
     const comp = o.comp orelse return;
     var open_args = [_]json.Value{ .{ .str = o.busy }, .{ .str = o.data }, .{ .str = comp } };
 
@@ -64,6 +72,37 @@ pub fn openSession(sess: *busyc.Session, o: OpenOpts) !void {
             return;
         } else |aerr| {
             sess.setErr("aux OpenDB failed: {s}", .{@errorName(aerr)});
+            return aerr;
+        }
+    }
+}
+
+/// Close the open company on a session (issue #5, swap-based switching).
+/// CloseDB is 0-param (live probed) and only exists on fixed-interface
+/// classes; services classes close through a transient aux fixed interface,
+/// mirroring openCompany's aux path. Errors after close are not fatal to
+/// the caller — the process-global company slot may already be free.
+pub fn closeCompany(sess: *busyc.Session) !void {
+    var no_args = [_]json.Value{};
+    if (sess.invoke("CloseDB", &no_args)) |r| {
+        var res = r;
+        defer res.deinit(sess.alloc);
+        return;
+    } else |err| {
+        if (err != error.NoSuchMember) return err;
+        const fi = registry.newestFixedInterface() orelse return error.NoBusyProgId;
+        var aux = try busyc.Session.init(sess.alloc);
+        defer aux.deinit();
+        aux.create(fi) catch |aerr| {
+            sess.setErr("aux close via '{s}' failed: {s}", .{ fi, @errorName(aerr) });
+            return aerr;
+        };
+        if (aux.invoke("CloseDB", &no_args)) |ar| {
+            var ares = ar;
+            defer ares.deinit(aux.alloc);
+            return;
+        } else |aerr| {
+            sess.setErr("aux CloseDB failed: {s}", .{@errorName(aerr)});
             return aerr;
         }
     }

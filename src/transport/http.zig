@@ -17,6 +17,7 @@ const registry = @import("../core/registry.zig");
 const envelope = @import("envelope.zig");
 const format = @import("format.zig");
 const auth = @import("auth.zig");
+const sessions = @import("sessions.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -28,7 +29,6 @@ const startsWithCi = helpers.startsWithCi;
 const printOut = helpers.printOut;
 const okWrap = envelope.okWrap;
 const optsFrom = cli_mod.optsFrom;
-const openSession = ops.openSession;
 const surfaceText = ops.surfaceText;
 const listBusyClasses = registry.listBusyClasses;
 const urlDecode = helpers.urlDecode;
@@ -40,6 +40,10 @@ const ConnCtx = struct {
     sess: *busyc.Session,
     prog_id: []const u8,
     comp: ?[]const u8,
+    /// Issue #5: swap-based multi-company session behind `sess`.
+    sw: *sessions.Switcher,
+    /// Per-request company override from the X-Company header ("" = none).
+    company_hdr: []const u8 = "",
     /// Query guard mode for POST /query (issue #3; serve default read-only).
     query_mode: sqlguard.Mode,
     /// Row cap for /query responses (0 = unlimited).
@@ -104,6 +108,7 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
     var ctype_hdr: []const u8 = "";
     var auth_hdr: []const u8 = "";
     var xtok_hdr: []const u8 = "";
+    var xcompany_hdr: []const u8 = "";
     while (true) {
         const l = (try rd.interface.takeDelimiter('\n')) orelse break;
         const line = std.mem.trim(u8, l, " \t\r");
@@ -118,6 +123,8 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
             auth_hdr = std.mem.trim(u8, line["authorization:".len..], " ");
         } else if (startsWithCi(line, "x-bridge-token:")) {
             xtok_hdr = std.mem.trim(u8, line["x-bridge-token:".len..], " ");
+        } else if (startsWithCi(line, "x-company:")) {
+            xcompany_hdr = std.mem.trim(u8, line["x-company:".len..], " ");
         } else if (startsWithCi(line, "expect:")) {
             if (std.ascii.eqlIgnoreCase(std.mem.trim(u8, line["expect:".len..], " "), "100-continue"))
                 expect_continue = true;
@@ -159,7 +166,9 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
     defer req_arena.deinit();
     const ralloc = req_arena.allocator();
 
-    const r = route(ctx, ralloc, fmt, verb, path, query, body, ctype_hdr) catch |err| blk: {
+    var rctx = ctx;
+    rctx.company_hdr = xcompany_hdr;
+    const r = route(rctx, ralloc, fmt, verb, path, query, body, ctype_hdr) catch |err| blk: {
         var cb: [64]u8 = undefined;
         const msg = if (ctx.sess.lastError().len > 0) ctx.sess.lastError() else @errorName(err);
         break :blk Route{
@@ -234,6 +243,27 @@ fn route(
     const jct = format.ct_json;
     const xct = format.ct_xml;
 
+    // Company selection (issue #5): company-scoped routes honor ?comp=
+    // (query, wins) or X-Company (header); default = the serve --comp.
+    // Swap happens here - one company open at a time (BUSY COM state is
+    // process-global, first-open-wins; see sessions.zig header comment).
+    if (eql(path, "/query") or eql(path, "/call") or startsWithCi(path, "/op")) {
+        const sel: ?[]const u8 = blk: {
+            if (try qparam(ralloc, query, "comp")) |c| break :blk c;
+            if (ctx.company_hdr.len > 0) break :blk ctx.company_hdr;
+            break :blk null;
+        };
+        ctx.sw.ensure(sel) catch |err| {
+            if (err == error.CompanyNotFound)
+                return .{
+                    .status = "404 Not Found",
+                    .content_type = ctOf(fmt),
+                    .payload = try errPayload(ralloc, fmt, "404", "company_not_found", "unknown company (no <data>/<comp> directory; see GET /info)"),
+                };
+            return err;
+        };
+    }
+
     if (eql(verb, "GET") and eql(path, "/health")) {
         if (fmt == .xml)
             return .{ .status = "200 OK", .content_type = xct, .payload = try format.healthXml(ralloc) };
@@ -273,9 +303,10 @@ fn route(
     }
 
     if (eql(verb, "GET") and eql(path, "/info")) {
+        const active = ctx.sw.current orelse ctx.sw.opts.comp;
         if (fmt == .xml)
-            return .{ .status = "200 OK", .content_type = xct, .payload = try format.infoXml(ralloc, cli_mod.VERSION, ctx.prog_id, ctx.comp) };
-        return .{ .status = "200 OK", .content_type = jct, .payload = try format.infoJson(ralloc, cli_mod.VERSION, ctx.prog_id, ctx.comp) };
+            return .{ .status = "200 OK", .content_type = xct, .payload = try format.infoXml(ralloc, cli_mod.VERSION, ctx.prog_id, active, ctx.sw.switches) };
+        return .{ .status = "200 OK", .content_type = jct, .payload = try format.infoJson(ralloc, cli_mod.VERSION, ctx.prog_id, active, ctx.sw.switches) };
     }
 
     if (eql(verb, "GET") and eql(path, "/constants")) {
@@ -676,9 +707,8 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
         return 1;
     }
 
-    var sess = try busyc.Session.init(alloc);
-    defer sess.deinit();
-    try openSession(&sess, o);
+    var sw = try sessions.Switcher.init(alloc, io, o);
+    defer sw.deinit();
 
     const addr = try Io.net.IpAddress.parse(host, port);
     var server = try addr.listen(io, .{});
@@ -686,7 +716,7 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
 
     const mode_wire = if (guard.mode == .read_only) "read-only" else @tagName(guard.mode);
     const boot = try std.fmt.allocPrint(alloc,
-        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s}}}
+        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s},"multi_company":true}}
         \\
     , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows, if (token != null) "true" else "false" });
     defer alloc.free(boot);
@@ -694,9 +724,10 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
 
     const ctx = ConnCtx{
         .io = io,
-        .sess = &sess,
+        .sess = &sw.sess,
         .prog_id = o.prog_id,
         .comp = o.comp,
+        .sw = &sw,
         .query_mode = guard.mode,
         .max_rows = guard.max_rows,
         .token = token,

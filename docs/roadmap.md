@@ -82,7 +82,7 @@ flowchart TD
 
 ### H1 — The facade *(v1 surface for apps)*
 - [`007-erp-facade-rfc.md`](issues/007-erp-facade-rfc.md) — resource model, `/v1`, name-based codes, paging, transactions (`BeginTran`/`CommitTran`) — **core/ops slice done (CLI `op`)**; HTTP `/v1` remains
-- [`005-multi-company-sessions.md`](issues/005-multi-company-sessions.md) — one `serve` process, many companies (today: bound to a single `--comp`)
+- ~~[`005-multi-company-sessions.md`](issues/005-multi-company-sessions.md)~~ — ✅ closed 2026-10-09 (swap-based `?comp=`/`X-Company` in serve; pool impossible — BUSY COM state is process-global first-open-wins; ~7s per swap)
 - ~~[`004-remote-exposure-auth.md`](issues/004-remote-exposure-auth.md)~~ — ✅ closed 2026-10-09 (token auth + exposure policy, live suite 09)
 
 ### H2 — Consumers

@@ -1,6 +1,6 @@
 # 005 · Multi-company sessions in serve
 
-**Labels:** `enhancement` · **Effort:** M · **Status:** open · **Milestone:** H1
+**Labels:** `enhancement` · **Effort:** M · **Status:** closed (2026-10-09) · **Milestone:** H1
 
 ## Problem
 
@@ -32,11 +32,39 @@ Constraints that shape the design (from live testing):
 
 ## Acceptance criteria
 
-- [ ] One `serve` process answers queries against **two** companies in one live test.
-- [ ] Default `--comp` behavior unchanged (existing live tests pass untouched).
-- [ ] Unknown company → `code:"company_not_found"`; pool respects `--max-companies`.
-- [ ] Concurrency documented: what is serialized, what is parallel, why (STA, file locks).
-- [ ] Stress: N sequential requests across 2 companies, no leaks (debug allocator clean).
+- [x] One `serve` process answers queries against **two** companies in one live test.
+- [x] Default `--comp` behavior unchanged (existing live tests pass untouched).
+- [x] Unknown company → `code:"company_not_found"` (pool cap N/A — see design note).
+- [x] Concurrency documented: what is serialized, what is parallel, why (STA, file locks).
+- [x] Stress: N sequential requests across 2 companies, no leaks (debug allocator clean).
+
+## Resolution (2026-10-09): pool → swap
+
+Live probing **falsified the pool premise**: BUSY's COM server keeps
+**process-global, first-open-wins** company state. Two dispatches created in
+one process both answer for whichever company was `OpenDB`'ed *first* — a
+second `OpenDB` returns true but silently does not switch (verified with a
+marker master present in only one of two cloned companies). A parallel
+session pool is therefore impossible in-process.
+
+The shipped design is a **swap** (`src/transport/sessions.zig`): one
+session, `CloseDB`+`OpenDB` on demand, tracked by a `Switcher`. Since the
+open set has exactly one occupant, `--max-companies` is moot and was not
+implemented. Requests remain serialized (single-threaded accept loop —
+already required by COM's STA).
+
+Wire contract: company-scoped routes (`/query`, `/call`, `/op*`) honor
+`?comp=CODE` (query, wins) or `X-Company: CODE` (header); default = the
+serve `--comp`. Unknown → 404 `company_not_found`. `/info` reports the
+active `company` and cumulative `switches`.
+
+**Cost warning:** a swap is BUSY's own CloseDB+OpenDB — **~7s measured
+live**. Per-request company hopping is expensive; apps should batch per
+company or run one serve process per hot company.
+
+Live test: `tests/live/10-multi-company.ps1` (14 checks incl. 20-request
+alternating stress; second company = file-level clone `COMP0002`,
+fixture documented in the test header).
 
 ## Notes
 

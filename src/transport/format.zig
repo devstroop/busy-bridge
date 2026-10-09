@@ -204,7 +204,8 @@ pub fn constantsXml(alloc: Allocator) ![]u8 {
 }
 
 /// GET /info — identity/capabilities of the running serve process.
-pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8) ![]u8 {
+/// `switches` = successful per-request company switches (issue #5).
+pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8, switches: u64) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     var w = json.Writer{ .buf = &out, .alloc = alloc };
@@ -214,11 +215,14 @@ pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp
     try w.str(prog_id);
     try w.raw(",\"company\":");
     if (comp) |c| try w.str(c) else try w.raw("null");
+    try w.raw(",\"switches\":");
+    var sbuf: [20]u8 = undefined;
+    try w.raw(std.fmt.bufPrint(&sbuf, "{d}", .{switches}) catch unreachable);
     try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\",\"/op/report\"]}");
     return out.toOwnedSlice(alloc);
 }
 
-pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8) ![]u8 {
+pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8, switches: u64) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     try out.appendSlice(alloc, "<Info bridge='busy-bridge' version='");
@@ -227,6 +231,9 @@ pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp:
     try xml_write.escapeAttr(alloc, &out, prog_id);
     try out.appendSlice(alloc, "' company='");
     if (comp) |c| try xml_write.escapeAttr(alloc, &out, c);
+    try out.appendSlice(alloc, "' switches='");
+    var sbuf: [20]u8 = undefined;
+    try out.appendSlice(alloc, std.fmt.bufPrint(&sbuf, "{d}", .{switches}) catch unreachable);
     try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/><Route path='/op/report'/></Info>");
     return out.toOwnedSlice(alloc);
 }
@@ -506,4 +513,5 @@ test "test aggregation for the build test root" {
     _ = @import("../core/constants.zig");
     _ = @import("../core/ops.zig"); // issue #7 ops layer (pure suites)
     _ = @import("envelope.zig");
+    _ = @import("sessions.zig"); // issue #5 multi-company switcher (pure suites)
 }

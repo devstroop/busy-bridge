@@ -16,6 +16,7 @@ busy-bridge query --comp COMP0001 --sql "..."   # SQL -> rows (opens company via
 busy-bridge call --method M --args '[...]'      # any of ~4,400 COM methods
 busy-bridge serve [--port 9820] [--comp C]      # HTTP JSON/XML API over the same ops
       [--query-mode ...] [--max-rows N]         # serve defaults to read-only / 10000
+                                               # multi-company: per-request ?comp= / X-Company
 ```
 
 ## Wire contract: one format per response
@@ -103,6 +104,16 @@ off-loopback requires a token, see [Security](#security-token-auth--exposure-pol
 | `POST /call` | `{"method":"M","args":[...]}` | any COM method |
 | `GET /call?method=M&args=...` | `args` = URL-encoded JSON array | read-style calls, e.g. `args=%5Bfalse%5D` |
 | `POST /call?method=M&type=N[&modify=true]` | **raw XML body** (`Content-Type: application/xml`) | document writes; `type` is the master/voucher type code at `args[0]` |
+
+**Multi-company** (issue #5): company-scoped routes (`/query`, `/call`,
+`/op*`) accept `?comp=CODE` (query, wins) or `X-Company: CODE` (header);
+without either, the serve `--comp` default applies. Unknown code → 404
+`company_not_found`. `/info` reports the active `company` and cumulative
+`switches`. Implementation is **swap-based** — one company open per
+process (BUSY COM company state is process-global, first-open-wins; a
+second `OpenDB` silently no-ops), so a request for another company pays
+BUSY's `CloseDB`+`OpenDB` cost, **~7s per switch**. Batch requests per
+company, or run one `serve` process per hot company.
 
 Errors are `<Error code='400|500' error='…'>` or
 `{"ok":false,"code":"…","error":"…"}` with matching HTTP status. `code` is
