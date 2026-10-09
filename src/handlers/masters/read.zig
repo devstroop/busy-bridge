@@ -4,10 +4,10 @@
 //! parsed to a tree. Shared kinds/type codes live in the barrel
 //! (`../masters.zig`); writes live in `write.zig`.
 const std = @import("std");
-const json = @import("../../../util/json.zig");
-const xml = @import("../../../util/xml.zig");
-const helpers = @import("../../../util/helpers.zig");
-const com = @import("../../com.zig");
+const json = @import("../../util/json.zig");
+const xml = @import("../../util/xml.zig");
+const helpers = @import("../../util/helpers.zig");
+const com = @import("../../core/com.zig");
 const common = @import("../common.zig");
 const m = @import("../masters.zig");
 

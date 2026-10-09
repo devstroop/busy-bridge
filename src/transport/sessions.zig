@@ -22,7 +22,7 @@
 const std = @import("std");
 const Io = std.Io;
 const busyc = @import("../core/com.zig");
-const ops = @import("../core/ops.zig");
+const ops = @import("../handlers.zig");
 
 const Allocator = std.mem.Allocator;
 const eql = std.ascii.eqlIgnoreCase;

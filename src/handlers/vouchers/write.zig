@@ -3,9 +3,9 @@
 //! and delete. Shared helpers (byrefArg/requireStr/docToXml) come from
 //! the masters barrel; reads live in `read.zig`.
 const std = @import("std");
-const json = @import("../../../util/json.zig");
-const constants = @import("../../constants.zig");
-const com = @import("../../com.zig");
+const json = @import("../../util/json.zig");
+const constants = @import("../../core/constants.zig");
+const com = @import("../../core/com.zig");
 const common = @import("../common.zig");
 const masters = @import("../masters.zig");
 

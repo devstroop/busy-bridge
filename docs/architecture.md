@@ -10,30 +10,31 @@ healthy, and how to extend it. Enforced by the two structure gates
 ```text
 src/
 ├── main.zig              argv -> commands.run (imports transport only)
+├── handlers.zig          facade barrel + test-aggregation block (issue 012 split)
+├── handlers/             ERP facade - imports core + util, never transport
+│   ├── masters.zig   barrel (Kind, typeCode, ListOpts, requireStr)
+│   │   ├── read.zig      list, get — normalized reads, keyset paging
+│   │   └── write.zig     create, update, delete — SaveMasterFromXML
+│   ├── vouchers.zig  barrel (ListOpts)
+│   │   ├── read.zig      list, get — Tran1 + GetVchXML
+│   │   └── write.zig     buildSale/JournalDoc, post, delete
+│   ├── common.zig    barrel
+│   │   ├── value.zig     put/objFrom/merge/dup/stringify/childStr
+│   │   ├── sql.zig       resolveNames, codeByName, classProgId
+│   │   ├── dates.zig     normalizeDate / toBusyDate
+│   │   └── cursor.zig    opaque keyset paging cursors
+│   ├── reports.zig   named reports (by design: one probe-verified
+│   │                 call pattern each; see size-gate allowlist)
+│   ├── exec.zig      write-op dispatcher (CLI + HTTP + batch share it)
+│   ├── batch.zig     BeginTran/CommitTran batch runner
+│   ├── catalog.zig   op catalog as data (by design: pure table)
+│   └── golden.zig    golden-read flow script for `busy-bridge record` (issue 009)
 ├── core/                 BUSY domain — never imports transport
 │   ├── com.zig + com/    raw IDispatch FFI: Session, invoke, recordset, surface
-│   ├── ops.zig           barrel + test-aggregation block for ops children
-│   ├── ops/
-│   │   ├── masters.zig   barrel (Kind, typeCode, ListOpts, requireStr)
-│   │   │   ├── read.zig      list, get — normalized reads, keyset paging
-│   │   │   └── write.zig     create, update, delete — SaveMasterFromXML
-│   │   ├── vouchers.zig  barrel (ListOpts)
-│   │   │   ├── read.zig      list, get — Tran1 + GetVchXML
-│   │   │   └── write.zig     buildSale/JournalDoc, post, delete
-│   │   ├── common.zig    barrel
-│   │   │   ├── value.zig     put/objFrom/merge/dup/stringify/childStr
-│   │   │   ├── sql.zig       resolveNames, codeByName, classProgId
-│   │   │   ├── dates.zig     normalizeDate / toBusyDate
-│   │   │   └── cursor.zig    opaque keyset paging cursors
-│   │   ├── reports.zig   named reports (by design: one probe-verified
-│   │   │                 call pattern each; see size-gate allowlist)
-│   │   ├── exec.zig      write-op dispatcher (CLI + HTTP + batch share it)
-│   │   ├── batch.zig     BeginTran/CommitTran batch runner
-│   │   └── catalog.zig   op catalog as data (by design: pure table)
 │   ├── constants.zig     master/voucher code tables (machine-readable)
 │   ├── registry.zig      Win32 registry: newest Busy2L*.CFixedInterface
 │   └── xmlmeta.zig       which methods carry XML docs (Get=out, Save=in)
-├── transport/            protocol edge — may import core + util
+├── transport/            protocol edge — may import core + handlers + util
 │   ├── main dispatcher: commands.zig (CLI), http.zig (serve)
 │   ├── commands/
 │   │   ├── raw.zig       classes, surface, query, call
@@ -77,7 +78,7 @@ barrel back for shared types — Zig resolves the lazy cycle (this is how
 in from a **test block**. Two aggregation blocks cover the tree:
 
 - `transport/format.zig` → `test "test aggregation for the build test root"` — util, core, envelope, auth, sessions, v1, format children, replay suites (issue 009)
-- `core/ops.zig` → `test "test aggregation for ops children"` — every `ops/*` module
+- `handlers.zig` → `test "test aggregation for handler children"` — every `handlers/*` module
 
 A second binary, `zig build replay-test`, roots at `src/replay.zig` and
 runs only the host-agnostic suites (replay entry + replay + the pure
@@ -113,12 +114,12 @@ never touch sockets.
 
 - **a raw CLI command**: `fn cmdX(...)` in `commands/raw.zig` (or
   `ops.zig` for `op` verbs), one `if` line in `commands.zig run()`.
-- **an /op operation**: data row in `core/ops/catalog.zig` (docs +
-  `GET /op` regenerate from it), handler in `core/ops/exec.zig` (writes)
-  or the relevant `ops/*` module (reads), then the HTTP route in
+- **an /op operation**: data row in `handlers/catalog.zig` (docs +
+  `GET /op` regenerate from it), handler in `handlers/exec.zig` (writes)
+  or the relevant `handlers/*` module (reads), then the HTTP route in
   `http/routes_ops.zig` if it needs one.
 - **a /v1 resource**: route arm in `v1.zig routeInner`, reusing
-  `core/ops` — no new COM logic at the transport edge.
+  `handlers` — no new COM logic at the transport edge.
 - **an HTTP route group**: new `http/routes_<name>.zig` returning
   `!?Route`, wired into `http.zig route()` at the right position.
 
@@ -126,7 +127,7 @@ never touch sockets.
 
 | Gate | Rule | Exemptions |
 |---|---|---|
-| `check_layers.ps1` | `util→util`, `core→+core`, `transport→+transport`, `main→transport` | none |
+| `check_layers.ps1` | `util→util`, `core→+core`, `handlers→+core+util`, `transport→+handlers+core+util`, `main→transport` | none |
 | `check_size.ps1` | `src/**/*.zig` ≤ 400 physical lines (warn > 300), `tests/**/*.ps1` ≤ 200; **enforce by default**, `-ReportOnly` to preview | allowlist entries need a written reason: `[by design]` permanent (catalog table, parser unit) or `[transitional]` tied to an open split phase (delete when it lands) |
 
 History: the restructure that produced this layout is issue

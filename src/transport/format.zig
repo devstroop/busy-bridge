@@ -64,7 +64,7 @@ test "test aggregation for the build test root" {
     _ = @import("../util/sqlguard.zig"); // issue #3 query guard corpus
     _ = @import("../core/registry.zig");
     _ = @import("../core/constants.zig");
-    _ = @import("../core/ops.zig"); // issue #7 ops layer (pure suites)
+    _ = @import("../handlers.zig"); // issue #7 ops layer (pure suites)
     _ = @import("envelope.zig");
     _ = @import("auth.zig"); // issue #4 token gate (pure suites)
     _ = @import("sessions.zig"); // issue #5 multi-company switcher (pure suites)

@@ -1,5 +1,5 @@
 //! /v1 — versioned ERP resource facade (issue #7): resource-style paths
-//! over the same `core/ops` as /op, plus opaque keyset cursors for lists.
+//! over the same `handlers` as /op, plus opaque keyset cursors for lists.
 //!
 //! Additive to the raw tier and to /op (kept for unversioned compat);
 //! one wire-envelope family across the bridge — v1 responses reuse the
@@ -23,7 +23,7 @@ const std = @import("std");
 const json = @import("../util/json.zig");
 const busyc = @import("../core/com.zig");
 const helpers = @import("../util/helpers.zig");
-const ops = @import("../core/ops.zig");
+const ops = @import("../handlers.zig");
 const envelope = @import("envelope.zig");
 const format = @import("format.zig");
 

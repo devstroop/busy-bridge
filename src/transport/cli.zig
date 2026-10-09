@@ -2,7 +2,7 @@
 const std = @import("std");
 const build_options = @import("build_options");
 const registry = @import("../core/registry.zig");
-const ops = @import("../core/ops.zig");
+const ops = @import("../handlers.zig");
 const sqlguard = @import("../util/sqlguard.zig");
 
 /// Release version + commit, injected at build time from `git describe`

@@ -7,8 +7,9 @@ const busyc = @import("../../core/com.zig");
 const helpers = @import("../../util/helpers.zig");
 const sqlguard = @import("../../util/sqlguard.zig");
 const cli_mod = @import("../cli.zig");
-const ops = @import("../../core/ops.zig");
+const ops = @import("../../handlers.zig");
 const record = @import("../../core/com/record.zig");
+const golden = @import("../../handlers/golden.zig");
 const registry = @import("../../core/registry.zig");
 const envelope = @import("../envelope.zig");
 const format = @import("../format.zig");
@@ -310,7 +311,7 @@ pub fn cmdRecord(io: Io, alloc: Allocator, cli: Cli) !u8 {
         var cb: [64]u8 = undefined;
         return fail(io, alloc, .json, helpers.errCode(err, &cb), @errorName(err));
     };
-    record.runGoldenReads(&sess, alloc, &rec, o.busy, o.data, comp) catch |err| {
+    golden.runGoldenReads(&sess, alloc, &rec, o.busy, o.data, comp) catch |err| {
         rec.writeFile(io, out_path) catch {};
         var cb: [64]u8 = undefined;
         const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);

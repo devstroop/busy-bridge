@@ -3,10 +3,10 @@
 //! The only `common/` submodule that needs a Session — everything else
 //! here is a pure transform over its results.
 const std = @import("std");
-const json = @import("../../../util/json.zig");
-const helpers = @import("../../../util/helpers.zig");
-const registry = @import("../../registry.zig");
-const Session = @import("../../com.zig").Session;
+const json = @import("../../util/json.zig");
+const helpers = @import("../../util/helpers.zig");
+const registry = @import("../../core/registry.zig");
+const Session = @import("../../core/com.zig").Session;
 
 const Allocator = std.mem.Allocator;
 

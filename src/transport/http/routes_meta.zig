@@ -3,7 +3,7 @@
 //! registry or static tables. Returns null → caller tries the next group.
 const std = @import("std");
 const json = @import("../../util/json.zig");
-const ops = @import("../../core/ops.zig");
+const ops = @import("../../handlers.zig");
 const registry = @import("../../core/registry.zig");
 const cli_mod = @import("../cli.zig");
 const format = @import("../format.zig");

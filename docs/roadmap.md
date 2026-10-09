@@ -16,7 +16,7 @@ are all implemented and covered by the nine live suites in
 `tests/live/` (full `run-all.ps1` green against DEMO). Token auth +
 exposure policy (004) is also closed — non-loopback bind requires a token.
 
-**H1 is done** (2026-10-09): the ERP facade (007) ships as `core/ops`
+**H1 is done** (2026-10-09): the ERP facade (007) ships as `handlers` (moved out of `core/` for the #12 package split)
 + CLI `op` + HTTP `/v1` with opaque keyset cursors; multi-company serve
 (005) is swap-based `?comp=`/`X-Company`. Eleven live suites green.
 
@@ -101,7 +101,7 @@ flowchart TD
 - [`006-voucher-write-validation.md`](issues/006-voucher-write-validation.md) — close the last live-test gap (`SaveVchFromXML` never validated; `Tran1` returns *no recordset* — semantics need documenting)
 
 ### H1 — The facade *(v1 surface for apps)* ✅ *(done 2026-10-09)*
-- ~~[`007-erp-facade-rfc.md`](issues/007-erp-facade-rfc.md)~~ — ✅ closed 2026-10-09 (core/ops + CLI `op` + HTTP `/v1` with opaque keyset cursors; live suite 11)
+- ~~[`007-erp-facade-rfc.md`](issues/007-erp-facade-rfc.md)~~ — ✅ closed 2026-10-09 (handlers layer + CLI `op` + HTTP `/v1` with opaque keyset cursors; live suite 11)
 - ~~[`005-multi-company-sessions.md`](issues/005-multi-company-sessions.md)~~ — ✅ closed 2026-10-09 (swap-based `?comp=`/`X-Company` in serve; pool impossible — BUSY COM state is process-global first-open-wins; ~7s per swap)
 - ~~[`004-remote-exposure-auth.md`](issues/004-remote-exposure-auth.md)~~ — ✅ closed 2026-10-09 (token auth + exposure policy, live suite 09)
 

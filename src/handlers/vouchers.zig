@@ -38,7 +38,7 @@ const testing = std.testing;
 
 test "voucher list rejects unknown type names" {
     // BadArgs path needs a session; the constants guard itself is pure:
-    const constants = @import("../constants.zig");
+    const constants = @import("../core/constants.zig");
     try testing.expect(constants.voucherCode("sale") != null);
     try testing.expect(constants.voucherCode("not-a-type") == null);
 }

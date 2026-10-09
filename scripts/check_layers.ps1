@@ -1,7 +1,8 @@
 # Enforces the src/ layer dependency rules (Phase 1 architecture):
 #   util/**      -> std, builtin, util/**
 #   core/**      -> + core/**          (never transport)
-#   transport/** -> + transport/**
+#   handlers/**  -> + handlers/** + core/** + util/**   (ERP facade, never transport)
+#   transport/** -> + transport/** + handlers/**
 #   main.zig     -> transport/** only  (never core/util directly)
 # Exits non-zero and lists violations when a layer imports across its border.
 $ErrorActionPreference = 'Stop'
@@ -10,7 +11,8 @@ $src = (Resolve-Path (Join-Path $PSScriptRoot '..\src')).Path
 $rules = @{
     'util'      = @('util')
     'core'      = @('util', 'core')
-    'transport' = @('util', 'core', 'transport')
+    'handlers'  = @('util', 'core', 'handlers')
+    'transport' = @('util', 'core', 'handlers', 'transport')
 }
 
 $violations = New-Object System.Collections.Generic.List[string]
@@ -19,7 +21,9 @@ $files = @(Get-ChildItem -Path $src -Recurse -Filter *.zig)
 
 foreach ($file in $files) {
     $rel = $file.FullName.Substring($src.Length + 1)
-    $layer = if ($rel -match '[\\/]') { ($rel -split '[\\/]')[0] } else { 'root' }
+    # top-level files inherit the layer of their same-named folder (handlers.zig -> handlers)
+    $leaf = if ($rel -match '[\\/]') { ($rel -split '[\\/]')[0] } else { [IO.Path]::GetFileNameWithoutExtension($rel) }
+    $layer = if ($rules.ContainsKey($leaf)) { $leaf } else { 'root' }
     $text = [IO.File]::ReadAllText($file.FullName)
     foreach ($m in [regex]::Matches($text, '@import\("([^"]+)"\)')) {
         $imp = $m.Groups[1].Value
@@ -33,7 +37,9 @@ foreach ($file in $files) {
             continue
         }
         $trel = $resolved.Substring($prefix.Length)
-        $target = if ($trel -match '[\\/]') { ($trel -split '[\\/]')[0] } else { 'root' }
+        # top-level targets resolve by their same-named folder (../handlers.zig -> handlers)
+        $tleaf = if ($trel -match '[\\/]') { ($trel -split '[\\/]')[0] } else { [IO.Path]::GetFileNameWithoutExtension($trel) }
+        $target = if ($rules.ContainsKey($tleaf)) { $tleaf } else { 'root' }
         $allowed = if ($layer -eq 'root') { @('transport') } else { $rules[$layer] }
         if ($allowed -notcontains $target) {
             $violations.Add("$rel ($layer) imports '$imp' -> layer '$target' (allowed: $($allowed -join ', '))")

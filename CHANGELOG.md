@@ -9,6 +9,10 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 - `version` reports the git-describe version plus short commit
   (`busy-bridge 0.1.0 (commit abc1234, …)`); tarball builds without a
   checkout fall back to `0.1.0`/`unknown`.
+- Package split (issue 012): ERP facade `core/ops` -> top-level `handlers`
+  layer (barrel `src/handlers.zig` + `src/handlers/`); `core` is
+  COM-mechanics-only - the golden flow script moved to
+  `handlers/golden.zig`, transport imports `handlers`.
 
 ## [0.1.0] — 2026-10-09
 

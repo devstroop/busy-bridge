@@ -3,10 +3,10 @@
 //! codes + names out. Shared ListOpts lives in the barrel
 //! (`../vouchers.zig`); writes live in `write.zig`.
 const std = @import("std");
-const json = @import("../../../util/json.zig");
-const xml = @import("../../../util/xml.zig");
-const constants = @import("../../constants.zig");
-const com = @import("../../com.zig");
+const json = @import("../../util/json.zig");
+const xml = @import("../../util/xml.zig");
+const constants = @import("../../core/constants.zig");
+const com = @import("../../core/com.zig");
 const common = @import("../common.zig");
 const v = @import("../vouchers.zig");
 

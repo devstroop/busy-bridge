@@ -3,7 +3,7 @@
 //! null → caller falls through to the 404.
 const std = @import("std");
 const json = @import("../../util/json.zig");
-const ops = @import("../../core/ops.zig");
+const ops = @import("../../handlers.zig");
 const sh = @import("shared.zig");
 
 const Allocator = std.mem.Allocator;

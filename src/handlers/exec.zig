@@ -4,11 +4,11 @@
 //! the op's result object. Write ops only — reads keep their typed
 //! signatures in masters.zig / vouchers.zig.
 const std = @import("std");
-const json = @import("../../util/json.zig");
+const json = @import("../util/json.zig");
 const common = @import("common.zig");
 const masters = @import("masters.zig");
 const vouchers = @import("vouchers.zig");
-const Session = @import("../com.zig").Session;
+const Session = @import("../core/com.zig").Session;
 
 const Allocator = std.mem.Allocator;
 const eql = std.mem.eql;

@@ -1,5 +1,5 @@
 # Regenerate docs/operations.md from the single-source catalog table
-# (src/core/ops/catalog.zig) via `busy-bridge op catalog`.
+# (src/handlers/catalog.zig) via `busy-bridge op catalog`.
 #   powershell -File scripts/docs/generate-ops-doc.ps1
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -16,7 +16,7 @@ $header = @'
 
     powershell -File scripts/docs/generate-ops-doc.ps1
 
-Source of truth: `src/core/ops/catalog.zig` (the same table serves
+Source of truth: `src/handlers/catalog.zig` (the same table serves
 `busy-bridge op catalog` and `GET /op`). Overview: repository README,
 section "Operations API".
 '@

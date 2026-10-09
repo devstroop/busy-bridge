@@ -78,15 +78,15 @@ green CI run — the gates must run where the environment differs.**
 
 ## 5. Test distribution preview (for the future cut)
 
-73 discovered tests, by where they'd land under a lib/app split:
+82 discovered tests, by where they'd land under a lib/app split:
 
 | Target | Tests | Contents |
 |---|---|---|
-| library (util + core + shared renderers) | 65 | json/xml codec, helpers, sqlguard, constants/registry/xmlmeta, all `ops/*`, envelope + format suites |
+| library (util + core + shared renderers) | 65 | json/xml codec, helpers, sqlguard, constants/registry/xmlmeta, all `handlers/*`, envelope + format suites |
 | application (HTTP edge) | 8 | `auth` (6), `sessions` (1), `v1` (1) |
 | CLI | 0 | (none today) |
 
-`check_tests.ps1` asserts 73 repo-wide today; after the cut it becomes
+`check_tests.ps1` asserts 82 repo-wide today; after the cut it becomes
 the per-package discovery gate (each package gets its own expected count
 — the lesson from `b7d51d0` applied mechanically).
 
