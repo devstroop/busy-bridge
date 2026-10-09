@@ -49,15 +49,12 @@ Rules:
   2. `CheckIfLoginDetRequired(user)` (`COtherServices1`) — verified:
      `true` for admin and user1, `true` for unknown users too (no user
      enumeration),
-  3. **Regular-user credential check — TBD (iteration 6).**
-     `ValidUserNamePasswrdForParty` was the candidate but is
-     **proven mobile-app-gated** by BUSY's own error message (report
-     §5) — out of the path. Candidates under probe: `GetUserList` /
-     `GetUserProfile` (BusyExt21.COtherServices) and the common-DB
-     user table (`GetRecordsetFromCompanyDB`/`ExecuteQueryInADOForSQL`;
-     `UserControl` per the archive common-tables list).
-     **The login endpoint does not ship until a regular-user
-     credential primitive passes a +/− fixture pair.**
+  3. **Regular-user credential check — VERIFIED** (iteration 6):
+     `ValidUserPassword(user, pwd)` on **`CFixedInterface`** (default
+     class) — plain 2-string → bool, no ByRef/UDT/mobile gate. Live
+     fixtures: `admin/admin` → true, `user1/password` → true, both
+     wrong-password cases → false, unknown user → false
+     (indistinguishable — §4 holds). Report §6.
   4. `GetCompConfigJSON(skipBranch, fy, false)` (`CFixedInterface1`)
      → `config` payload.
 - Attribution identity of a headless COM session is the configured
@@ -131,15 +128,13 @@ policy is reported in `/info` (`"auth_mode": "off|token|session"`).
 
 ## 6. Open items (fixture/blocker-dependent)
 
-1. **Regular-user credential primitive** (iteration 6): probe
-   `GetUserList`/`GetUserProfile` (BusyExt21.COtherServices) and the
-   common-DB user table (`GetRecordsetFromCompanyDB`,
-   `UserControl`); exclude `CheckCSUserPwd`/`IsCSLoginExists` if
-   cloud-sync-gated. Typed-ByRef (`$byref` markers `bstr|bool|dispatch`)
-   has landed and is available for all of these probes.
+1. ~~Regular-user credential primitive~~ — **RESOLVED** (iteration 6):
+   `ValidUserPassword` verified with a +/− fixture pair (report §6).
+   `/auth/login` implementation (BUSY-011) is GO.
 2. `GetJSON2*`/`SaveVchFromJson` remaining param shapes (0x80020005
    persists on non-ByRef params; matrix next iteration).
 3. Audit hooks: `SaveLogInLogOutUserLog` / `SaveUserLOG` activation
    (BUSY-023) — verify headless first.
-4. Multi-FY sessions: `fy` semantics for `OpenDBForYear` once
-   enumeration (Collection marshaling) lands (BUSY-004).
+4. Multi-FY sessions: `fy` semantics for `OpenDBForYear` —
+   `UserControl.FinYrs` shows per-user FY prefs exist; wire after
+   enumeration lands (BUSY-004).

@@ -173,4 +173,8 @@ pub const Session = struct {
     pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {
         return @import("recordset.zig").queryToJson(self, sql);
     }
+
+    pub fn queryToJsonFrom(self: *Session, sql: []const u8, method: []const u8) !json.Value {
+        return @import("recordset.zig").queryToJsonFrom(self, sql, method);
+    }
 };

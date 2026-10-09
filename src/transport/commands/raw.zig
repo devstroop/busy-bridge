@@ -142,6 +142,17 @@ pub fn cmdQuery(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             else => unreachable,
         });
     };
+    // Query target DB (iteration 6): the FY DB via GetRecordset
+    // (default) or the company/common DB via GetRecordsetFromCompanyDB
+    // (regular-user tables live on the common side). Same guard.
+    const db = cli.getOr("--db", "fy");
+    const rs_method: []const u8 = if (std.mem.eql(u8, db, "common"))
+        "GetRecordsetFromCompanyDB"
+    else if (std.mem.eql(u8, db, "fy"))
+        "GetRecordset"
+    else {
+        return fail(io, alloc, fmt, "bad_args", "invalid --db (use fy, common)");
+    };
     const o = optsFrom(cli) catch |err| {
         var cb: [64]u8 = undefined;
         const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
@@ -163,7 +174,7 @@ pub fn cmdQuery(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             ok = false;
             break :blk;
         };
-        const rows = sess.queryToJson(sql) catch |err| {
+        const rows = sess.queryToJsonFrom(sql, rs_method) catch |err| {
             var cb: [64]u8 = undefined;
             const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
             out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);
