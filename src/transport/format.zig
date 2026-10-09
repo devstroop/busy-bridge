@@ -513,6 +513,7 @@ test "test aggregation for the build test root" {
     _ = @import("../core/constants.zig");
     _ = @import("../core/ops.zig"); // issue #7 ops layer (pure suites)
     _ = @import("envelope.zig");
+    _ = @import("auth.zig"); // issue #4 token gate (pure suites)
     _ = @import("sessions.zig"); // issue #5 multi-company switcher (pure suites)
     _ = @import("v1.zig"); // issue #7 /v1 facade (pure suites)
 }

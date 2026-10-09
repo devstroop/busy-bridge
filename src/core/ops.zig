@@ -20,6 +20,19 @@ pub const catalog = @import("ops/catalog.zig");
 
 const Allocator = std.mem.Allocator;
 
+// `zig build test` discovers tests only through test-block references;
+// the pub consts above are lazily analyzed, so aggregate the child
+// suites here (issue 011: without this, all 20 ops tests were skipped).
+test "test aggregation for ops children" {
+    _ = @import("ops/masters.zig");
+    _ = @import("ops/vouchers.zig");
+    _ = @import("ops/common.zig");
+    _ = @import("ops/exec.zig");
+    _ = @import("ops/batch.zig");
+    _ = @import("ops/reports.zig");
+    _ = @import("ops/catalog.zig");
+}
+
 /// Options to open a BUSY company session (domain-level, not CLI-specific).
 pub const OpenOpts = struct {
     prog_id: []const u8,

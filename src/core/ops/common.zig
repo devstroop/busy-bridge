@@ -93,8 +93,13 @@ pub fn mergeRoot(alloc: Allocator, dst: *const json.Value, src: *const json.Valu
     if (dst.* != .obj or src.* != .obj) return error.BadDocument;
     var out: std.ArrayList(json.Value.Entry) = .empty;
     errdefer {
-        var tmp = json.Value{ .obj = out.items };
-        tmp.deinit(alloc);
+        // free entries + buffer; a Value.deinit over out.items would free
+        // the slice with len != capacity (wrong-size free) and then
+        // out.deinit would free it again (issue 011: latent double-free)
+        for (out.items) |*e| {
+            e.val.deinit(alloc);
+            alloc.free(e.key);
+        }
         out.deinit(alloc);
     }
     // start from dst (owned copies)
@@ -361,8 +366,10 @@ test "toBusyDate write format" {
     defer a.free(slash);
     try testing.expectEqualStrings("08-10-2026", slash);
     try testing.expect((try toBusyDate(a, "garbage")) == null);
-    // round-trip with normalizeDate
-    const rt = (try normalizeDate(a, (try toBusyDate(a, "2026-01-02")).?)).?;
+    // round-trip with normalizeDate (free the intermediate conversion)
+    const intermediate = (try toBusyDate(a, "2026-01-02")).?;
+    defer a.free(intermediate);
+    const rt = (try normalizeDate(a, intermediate)).?;
     defer a.free(rt);
     try testing.expectEqualStrings("2026-01-02", rt);
 }
@@ -370,11 +377,11 @@ test "toBusyDate write format" {
 test "mergeRoot overwrites and keeps untouched fields" {
     const a = testing.allocator;
     var dst = try json.parse(a,
-        \\\\{"Name":"ZigItem","ParentGroup":"General","MainUnit":"Pcs.","Extra":{"A":"1"}}
+        \\{"Name":"ZigItem","ParentGroup":"General","MainUnit":"Pcs.","Extra":{"A":"1"}}
     );
     defer dst.deinit(a);
     var src = try json.parse(a,
-        \\\\{"ParentGroup":"Machinery","NewField":"x"}
+        \\{"ParentGroup":"Machinery","NewField":"x"}
     );
     defer src.deinit(a);
     var m = try mergeRoot(a, &dst, &src);

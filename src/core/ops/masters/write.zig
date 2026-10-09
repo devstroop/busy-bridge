@@ -31,8 +31,14 @@ pub fn fieldsToDoc(alloc: Allocator, kind: Kind, name: ?[]const u8, fields: *con
     if (fields.* != .obj) return error.BadDocument;
     var out: std.ArrayList(json.Value.Entry) = .empty;
     errdefer {
-        var t = json.Value{ .obj = out.items };
-        t.deinit(alloc);
+        // free entries + buffer; a Value.deinit over out.items would free
+        // the slice with len != capacity (wrong-size free) and then
+        // out.deinit would free it again (issue 011: latent double-free,
+        // crashed the never-run test under the safe test allocator)
+        for (out.items) |*e| {
+            e.val.deinit(alloc);
+            alloc.free(e.key);
+        }
         out.deinit(alloc);
     }
     if (name) |n| try common.put(alloc, &out, "Name", .{ .str = try alloc.dupe(u8, n) });
