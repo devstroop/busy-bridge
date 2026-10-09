@@ -43,8 +43,9 @@ archive.
 ## Regenerating
 
 ```powershell
-# re-extract the original documents (needs LibreOffice + pandoc + Python)
-powershell -File scripts/docs/extract.ps1
+# re-extract the original documents (needs LibreOffice + pandoc + Python;
+# -Source points at your local copy of the originals — not in this repo)
+powershell -File scripts/docs/extract.ps1 -Source <path>
 
 # refresh the function reference after a BUSY upgrade (needs zig build)
 powershell -File scripts/docs/generate-function-reference.ps1

@@ -4,14 +4,19 @@
 # pandas (scripts/docs/xls_to_md.py). Output is committed so the archive is
 # reproducible without the original documents.
 #
-# Usage: powershell -File scripts/docs/extract.ps1 [-Source <path>]
+# Usage: powershell -File scripts/docs/extract.ps1 -Source <path> [-OutDir <path>]
+#   -Source is REQUIRED: the original Word/Excel documents are NOT part of
+#   this repository (the committed archive under docs/archive/ is their
+#   output, so normal operation never needs them) — point it at your local
+#   copy of the vendor document set.
 param(
-    [string]$Source = (Join-Path $PSScriptRoot '..\..\..\BUSY Integration'),
+    [string]$Source,
     [string]$OutDir = (Join-Path $PSScriptRoot '..\..\docs\archive')
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
+if (-not $Source) { throw "usage: scripts/docs/extract.ps1 -Source <path to the original BUSY Integration docs (not stored in this repo)>" }
 if (-not (Test-Path $Source)) { throw "source not found: $Source" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
