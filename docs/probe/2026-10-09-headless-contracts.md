@@ -106,8 +106,8 @@ runs them with `useComp: true`.
 
 ## 4. Iteration 4 — regular-user pivot (2026-10-10)
 
-Operator configuration: super user `admin/admin`, regular user
-`user1/password`; **mobile-app category deliberately unused** (BDEP
+Operator configuration: super user `admin` (+ correct pw), regular user
+`user1` (+ correct pw); **mobile-app category deliberately unused** (BDEP
 friction — decision recorded here and in the auth contract). GUI closed
 before the run; the new lock pre-flight in `invoke-probes.ps1`
 verified the company free first. Run: 35 probes, OK=18.
@@ -188,6 +188,48 @@ semantics are unconfirmed (repID=0 guess → false, empty err).
 Still blocked (next iterations): `GetJSON2*`/`SaveVchFromJson`
 (0x80020005 persists — remaining non-ByRef param shapes), day-book/
 ledger (collection INPUT args), `ShowMsg` (arg count).
+
+## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
+
+**`ValidUserPassword(p_Name, p_Password)` — the regular-user
+credential validator — VERIFIED end-to-end on live BUSY.** It was in
+the archived 2017 function doc all along (missed by the earlier grep
+pattern `Passwrd` vs `Password`) and exists live on **`CFixedInterface`
+itself** (the bridge default class — no `--prog-id` gymnastics) and
+`COtherServices`. Plain 2-string in, bool out — no ByRef, no UDT, no
+mobile gate.
+
+| Fixture | Result |
+|---|---|
+| `("admin","<correct pw>")` | **true** |
+| `("admin","<wrong pw>")` | false |
+| `("user1","<correct pw>")` | **true** |
+| `("user1","<wrong pw>")` | false |
+| `("ghost","x")` | false — unknown user indistinguishable from wrong password (contract §4) |
+
+The login path now has all four legs verified:
+`OpenDB` → `CheckIfLoginDetRequired` (§4) → **`ValidUserPassword`** →
+`GetCompConfigJSON` (§1.5). **BUSY-011 GO.**
+
+**Also landed this iteration:**
+- `query --db common` (new): routes through
+  `GetRecordsetFromCompanyDB` with the same rowset walk + guard —
+  opens the whole company/common DB.
+- **`UserControl` table found** (common DB): rows
+  `Name` ("Admin"/"User1" — stored capitalized), `RecType` (1 and 7
+  per user), `C1–C4` (null), `B1–B15` (false), `I1–I4`/`L1–L4` (0),
+  `FinYrs` ("01/04/2026" per-user FY pref). No password column exposed
+  — BUSY keeps credentials behind `ValidUserPassword` (fine: we never
+  want to touch password material anyway).
+- `MSysObjects` (Jet catalog) — blocked (no_recordset);
+  `Users` table doesn't exist; `UserControl` is the one.
+- `GetUserList(p_IncludeSuperUser)` (BusyExt21.COtherServices) — works,
+  returns a Collection (`<dispatch>`; content = collection-marshaling
+  gap, not urgent for login).
+- Excluded: `IsCSLoginExists` fails headless (COM, no IErrorInfo) —
+  cloud-sync path, as suspected. `CheckCSUserPwd` needs a server-info
+  UDT — same verdict by signature.
+
 
 
 

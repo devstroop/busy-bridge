@@ -21,14 +21,21 @@ const variantFromValue = invoke.variantFromValue;
 const valueFromVariant = invoke.valueFromVariant;
 
 pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {
+    return queryToJsonFrom(self, sql, "GetRecordset");
+}
+
+/// Same walk, explicit recordset entrypoint: "GetRecordset" (FY DB) or
+/// "GetRecordsetFromCompanyDB" (company/common DB — iteration 6, the
+/// regular-user table lives on the common side).
+pub fn queryToJsonFrom(self: *Session, sql: []const u8, method: []const u8) !json.Value {
     const d = self.disp orelse return error.NoDispatch;
     var sql_v = VARIANT.init();
     try variantFromValue(self, &.{ .str = sql }, &sql_v);
     defer _ = VariantClear(&sql_v);
 
-    // GetRecordset(sql)
+    // method(sql) — 1 param on both entrypoints
     var wname: [64]u16 = undefined;
-    _ = try self.toWideFixed("GetRecordset", &wname);
+    _ = try self.toWideFixed(method, &wname);
     var names: [1][*:0]const u16 = .{@ptrCast(&wname)};
     var dispid: i32 = 0;
     if (d.vtbl.GetIDsOfNames(d, &IID_NULL, &names, 1, 0, &dispid) < 0) return error.NoSuchMember;
@@ -38,7 +45,7 @@ pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {
     const hr = d.vtbl.Invoke(d, dispid, &IID_NULL, 0, 1, &dp, &result, null, null);
     if (hr < 0) {
         _ = VariantClear(&result);
-        if (hr == DISP_E_EXCEPTION) self.loadErrorInfo() else self.setErr("GetRecordset failed 0x{x}", .{@as(u32, @bitCast(hr))});
+        if (hr == DISP_E_EXCEPTION) self.loadErrorInfo() else self.setErr("{s} failed 0x{x}", .{ method, @as(u32, @bitCast(hr)) });
         return error.QueryFailed;
     }
     defer _ = VariantClear(&result);
@@ -65,7 +72,7 @@ pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {
         // column alike — BUSY emits no SQL diagnostics, so the hint covers
         // both. Successful queries (even empty ones) always return a
         // recordset with rows:[].
-        self.setErr("GetRecordset returned vt={d} (no recordset): SQL could not run (missing table/column — BUSY gives no SQL error text)", .{result.vt});
+        self.setErr("{s} returned vt={d} (no recordset): SQL could not run (missing table/column — BUSY gives no SQL error text)", .{ method, result.vt });
         return error.NoRecordset;
     };
     defer _ = rso.vtbl.Release(rso);
