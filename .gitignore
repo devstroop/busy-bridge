@@ -8,3 +8,6 @@ zig-out/
 *.exp
 *.lib
 .DS_Store
+
+# raw probe runs (committed fixtures live in tests/probe/fixtures/)
+tests/probe/results/
