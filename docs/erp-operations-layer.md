@@ -3,8 +3,8 @@
 **Question:** should ERP-facing (BUSY-domain) operations live at the same
 layer as generic code, or in a separate project layer?
 
-**Decision: same repository, separate strict layer** — a `core`-level
-*operations* module on top of `core/com`, exposed through the existing
+**Decision: same repository, separate strict layer** — a top-level
+*handlers* layer on top of `core/com`, exposed through the existing
 transports. Extract into its own package only when a second consumer
 appears (the Zig `addModule` boundary is mechanical *because* the layer
 rules hold).
@@ -27,18 +27,19 @@ BUSY's serialization quirks.
 ## Proposed layer
 
 ```text
-src/core/
-├── com/          raw COM/IDispatch          (exists)
-├── ops/          ERP-level operations       (NEW)
+src/
+├── core/
+│   └── com/       raw COM/IDispatch          (exists)
+├── handlers/      ERP-level operations       (renamed from core/ops, issue 012)
 │   ├── masters.zig      create/update/delete/fetch masters by concept
 │   ├── vouchers.zig     post/fetch vouchers, bill-wise data
 │   └── reports.zig      balances, stock, trial balance helpers
 ```
 
-Rules (enforced by `scripts/check_layers.ps1`, unchanged):
+Rules (enforced by `scripts/check_layers.ps1`):
 
-- `core/ops` → may import `core/com`, `util/*` — **never** `transport`
-- `transport` may import `core/ops` — commands/HTTP gain an operations API
+- `handlers` → may import `core/**`, `util/*` — **never** `transport` (facade renamed from `ops` for issue #12: left `core/`)
+- `transport` may import `handlers` — commands/HTTP gain an operations API
   alongside the existing raw escape hatch
 - raw `call`/`surface` remain available — nothing is hidden
 
@@ -62,7 +63,7 @@ structured error mapping. The XML codec from Phase 2 does the heavy lifting.
 |---|---|
 | Same layer as COM code (no boundary) | ❌ leaks serialization details into transport; untestable without BUSY |
 | **Separate layer, same repo (chosen)** | ✅ atomic refactors, one CI, layer checker enforces direction; docs/README live beside it |
-| Separate package | ⏸ when a second consumer (another repo/product) needs `core/ops` without the bridge |
+| Separate package | ⏸ when a second consumer (another repo/product) needs `handlers` without the bridge |
 
 ## Migration impact
 
@@ -74,7 +75,7 @@ structured error mapping. The XML codec from Phase 2 does the heavy lifting.
 ## Status
 
 **M1 (reads) + M2 (writes) + M3 (reports) implemented** —
-`core/ops/{masters,vouchers,exec,batch,reports,catalog}.zig` behind
+`handlers/{masters,vouchers,exec,batch,reports,catalog}.zig` behind
 `busy-bridge op …` and `GET|POST|PUT|DELETE /op/*` (README “Operations
 API”, [catalog](operations.md), live suites `06-ops-reads`,
 `07-ops-writes`, `08-reports` — including `BeginTran`/`CommitTran`/

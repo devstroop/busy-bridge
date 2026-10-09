@@ -6,11 +6,11 @@
 //! is a transient second Session (nested CoInitialize is reference-
 //! counted on the same apartment thread).
 const std = @import("std");
-const json = @import("../../util/json.zig");
-const registry = @import("../registry.zig");
+const json = @import("../util/json.zig");
+const registry = @import("../core/registry.zig");
 const common = @import("common.zig");
 const exec = @import("exec.zig");
-const com = @import("../com.zig");
+const com = @import("../core/com.zig");
 
 const Allocator = std.mem.Allocator;
 const Session = com.Session;

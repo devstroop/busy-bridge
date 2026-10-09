@@ -347,7 +347,7 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
   (BUSY's debit column is signed), and everything returns to zero
   after delete.
 - **Catalog**: [docs/operations.md](docs/operations.md) — generated from
-  the single source table in `src/core/ops/catalog.zig` by
+  the single source table in `src/handlers/catalog.zig` by
   `scripts/docs/generate-ops-doc.ps1` (same table serves `op catalog`
   and `GET /op`).
 

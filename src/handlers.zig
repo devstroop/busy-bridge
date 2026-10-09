@@ -2,35 +2,35 @@
 //! open a company session, serialize a session's surface to JSON text.
 //!
 //! Facade (issue #7, RFC docs/erp-operations-layer.md): the ERP-level
-//! operations live in `ops/` beneath this barrel — normalized reads with
+//! operations live in `handlers/` beneath this barrel — normalized reads with
 //! mechanical internals (constants -> SQL/XML codec -> Save*/Get*XML).
 //! Raw `call`/`query` stay available as the escape hatch.
 const std = @import("std");
-const json = @import("../util/json.zig");
-const busyc = @import("com.zig");
-const registry = @import("registry.zig");
+const json = @import("util/json.zig");
+const busyc = @import("core/com.zig");
+const registry = @import("core/registry.zig");
 
-pub const masters = @import("ops/masters.zig");
-pub const vouchers = @import("ops/vouchers.zig");
-pub const common = @import("ops/common.zig");
-pub const exec = @import("ops/exec.zig");
-pub const batch = @import("ops/batch.zig");
-pub const reports = @import("ops/reports.zig");
-pub const catalog = @import("ops/catalog.zig");
+pub const masters = @import("handlers/masters.zig");
+pub const vouchers = @import("handlers/vouchers.zig");
+pub const common = @import("handlers/common.zig");
+pub const exec = @import("handlers/exec.zig");
+pub const batch = @import("handlers/batch.zig");
+pub const reports = @import("handlers/reports.zig");
+pub const catalog = @import("handlers/catalog.zig");
 
 const Allocator = std.mem.Allocator;
 
 // `zig build test` discovers tests only through test-block references;
 // the pub consts above are lazily analyzed, so aggregate the child
-// suites here (issue 011: without this, all 20 ops tests were skipped).
-test "test aggregation for ops children" {
-    _ = @import("ops/masters.zig");
-    _ = @import("ops/vouchers.zig");
-    _ = @import("ops/common.zig");
-    _ = @import("ops/exec.zig");
-    _ = @import("ops/batch.zig");
-    _ = @import("ops/reports.zig");
-    _ = @import("ops/catalog.zig");
+// suites here (issue 011: without this, all 20 handler tests were skipped).
+test "test aggregation for handler children" {
+    _ = @import("handlers/masters.zig");
+    _ = @import("handlers/vouchers.zig");
+    _ = @import("handlers/common.zig");
+    _ = @import("handlers/exec.zig");
+    _ = @import("handlers/batch.zig");
+    _ = @import("handlers/reports.zig");
+    _ = @import("handlers/catalog.zig");
 }
 
 /// Options to open a BUSY company session (domain-level, not CLI-specific).

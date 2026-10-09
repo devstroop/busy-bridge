@@ -2,7 +2,7 @@
 //! builders, scalar stringification, deep copy/merge, small accessors.
 //! Pure — no session, no BUSY knowledge. Shared by every op module.
 const std = @import("std");
-const json = @import("../../../util/json.zig");
+const json = @import("../../util/json.zig");
 
 const Allocator = std.mem.Allocator;
 

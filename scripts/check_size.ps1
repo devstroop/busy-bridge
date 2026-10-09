@@ -27,7 +27,7 @@ $exempt = @{
     # --- transitional: issue 011 phases (all landed — list empty) ---
     # --- by design (permanent) ---
     'src/util/xml/parse.zig'     = '[by design] single cohesive parse state machine, fixtures-tested as a unit; splitting would fragment it'
-    'src/core/ops/reports.zig'   = '[by design] named report operations, one probe-verified call pattern each; single responsibility'
+    'src/handlers/reports.zig'   = '[by design] named report operations, one probe-verified call pattern each; single responsibility'
 }
 
 $violations = New-Object System.Collections.Generic.List[string]

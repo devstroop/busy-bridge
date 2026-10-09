@@ -4,10 +4,10 @@
 //! boxes ({"$byref":"f8"}) and {"$date":...} VT_DATE inputs — probe-
 //! verified signatures are recorded at each fn. Never imports transport.
 const std = @import("std");
-const json = @import("../../util/json.zig");
-const helpers = @import("../../util/helpers.zig");
-const constants = @import("../constants.zig");
-const com = @import("../com.zig");
+const json = @import("../util/json.zig");
+const helpers = @import("../util/helpers.zig");
+const constants = @import("../core/constants.zig");
+const com = @import("../core/com.zig");
 const common = @import("common.zig");
 const masters = @import("masters.zig");
 
