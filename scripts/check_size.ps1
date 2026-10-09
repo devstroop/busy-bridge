@@ -27,7 +27,6 @@ $exempt = @{
     # --- transitional: issue 011 phases (delete the entry when the phase lands) ---
     'src/transport/http.zig'     = '[transitional] issue 011 phase 5: route() split into http/{shared,routes_meta,routes_raw,routes_ops}.zig'
     'src/transport/commands.zig' = '[transitional] issue 011 phase 4: cmd* split into commands/{raw,ops}.zig'
-    'src/transport/format.zig'   = '[transitional] issue 011 phase 3: split into format/{wire,call,xml_envelopes}.zig'
     # --- by design (permanent) ---
     'src/util/xml/parse.zig'     = '[by design] single cohesive parse state machine, fixtures-tested as a unit; splitting would fragment it'
     'src/core/ops/reports.zig'   = '[by design] named report operations, one probe-verified call pattern each; single responsibility'

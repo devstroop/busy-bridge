@@ -62,12 +62,13 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       `common/sql.zig` (110: resolveNames/codeByName/classProgId + 1
       test) + `common/dates.zig` (69 + 2 tests) + `common/cursor.zig`
       (48 + 1 test). One commit — the barrel stayed complete. Tests: 73.
-- [ ] **Phase 3 — format**: → `format/wire.zig` (negotiation) +
-      `format/call.zig` (enrichCallResult/xmlifyArgs + tests) +
-      `format/xml_envelopes.zig` (errorXml/info/constants/surface/rows/callXml).
-      ⚠️ `format.zig`'s final `test { }` block is the **`zig build test`
-      discovery root** — it stays; new files get `_ = @import` entries there.
-      Compare test count before/after.
+- [x] **Phase 3 — format**: barrel (75: Format/negotiation re-exports +
+      **test-aggregation root**, extended with the new submodules) +
+      `format/wire.zig` (56: enum + Accept/--out negotiation + negotiation
+      test) + `format/call.zig` (95: enrich/xmlify/passthrough + 2 tests) +
+      `format/xml_envelopes.zig` (365: error/constants/info/health/classes/
+      surface/rowset/call builders + 3 tests). Test count unchanged: 73
+      (6 moved, verified by namespaced name).
 - [ ] **Phase 4 — commands**: → `commands/raw.zig` (classes/surface/query/
       call) + `commands/ops.zig` (cmdOp/report/write); `run()` dispatcher
       stays, move `cmd*` bodies verbatim.
