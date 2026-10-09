@@ -396,10 +396,17 @@ every `@import` against the layer rules (`util→util`, `core→+core`,
 
 ```powershell
 zig build            # build x86-windows-gnu (32-bit: BUSY COM is 32-bit only)
-zig build test       #29 unit tests (XML codec fidelity, negotiation, envelopes, xmlify)
+zig build test       # unit tests (XML codec fidelity, negotiation, envelopes, xmlify)
 zig fmt --check .    # formatting
 powershell scripts/check_layers.ps1   # layer boundaries
+powershell scripts/check_size.ps1     # structure gate: src ≤400, tests ≤200 lines
+                                      #   (-ReportOnly to preview; enforcement default)
 ```
+
+**Structure gates** (both enforced): `check_layers.ps1` (dependency
+direction) and `check_size.ps1` (file size — oversized files must be split
+per [issue 011](docs/issues/011-source-restructure.md) or carry a
+documented allowlist entry with a written reason).
 
 CI (GitHub Actions, ubuntu + windows): fmt → layer check → build → unit
 tests (Windows runner; test binary is x86-windows).

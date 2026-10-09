@@ -72,6 +72,16 @@ flowchart TD
 3. **MCP is a thin adapter over the facade** — ~10–30 tools, never 4,496.
 4. **Normalization must not discard the escape hatch**: raw `/call` remains for
    statutory/odd corners.
+5. **File-size policy (issue 011)**: ≤400 physical lines per `src/**/*.zig`
+   (≤200 per live-test `.ps1`), enforced by `scripts/check_size.ps1`
+   (structure gate). Exceeding it requires a split or an allowlist entry
+   carrying a written reason — no large files unless explicitly by design.
+6. **Repo split (COM lib vs server): deferred, triggers recorded.** The
+   `core/` ↔ `transport/` layer line is the future cut and is already
+   enforced by `check_layers.ps1`; revisit only when a second *in-process*
+   consumer of `core` appears or independent release cadence is needed
+   (review at issue 010). Precondition: issue 011 restructure lands —
+   barrels make the split a `git mv` + `build.zig` edit.
 
 ## Horizons
 
