@@ -106,14 +106,48 @@ off-loopback requires a token, see [Security](#security-token-auth--exposure-pol
 | `POST /call?method=M&type=N[&modify=true]` | **raw XML body** (`Content-Type: application/xml`) | document writes; `type` is the master/voucher type code at `args[0]` |
 
 **Multi-company** (issue #5): company-scoped routes (`/query`, `/call`,
-`/op*`) accept `?comp=CODE` (query, wins) or `X-Company: CODE` (header);
-without either, the serve `--comp` default applies. Unknown code → 404
-`company_not_found`. `/info` reports the active `company` and cumulative
-`switches`. Implementation is **swap-based** — one company open per
-process (BUSY COM company state is process-global, first-open-wins; a
+`/op*`, `/v1*`) accept `?comp=CODE` (query, wins) or `X-Company: CODE`
+(header); without either, the serve `--comp` default applies. Unknown
+code → 404 `company_not_found`. `/info` reports the active `company` and
+cumulative `switches`. Implementation is **swap-based** — one company
+open per process (BUSY COM company state is process-global, first-open-wins; a
 second `OpenDB` silently no-ops), so a request for another company pays
 BUSY's `CloseDB`+`OpenDB` cost, **~7s per switch**. Batch requests per
 company, or run one `serve` process per hot company.
+
+### /v1 — versioned resource facade (issue #7)
+
+The product surface for apps: resource-style paths over the same ops as
+`/op`, with **opaque keyset cursors** for lists.
+
+| Route | Verb | Notes |
+|---|---|---|
+| `GET /v1` | — | surface index (resource list) |
+| `GET /v1/accounts[?limit=&cursor=&q=]` | — | list; `limit` default 100, 0 = unlimited |
+| `GET /v1/accounts/{name}` | — | one by exact business name (URL-encoded) |
+| `POST /v1/accounts` | JSON body | create (`name`, `parent`, …) |
+| `PUT /v1/accounts/{name}` | JSON body | update; path name wins over body |
+| `DELETE /v1/accounts/{name}` | — | delete |
+| `/v1/items[...]` | same | item masters (same shapes) |
+| `GET /v1/vouchers[?type=&limit=&cursor=]` | — | list; cursor pages by `VchCode DESC` |
+| `GET /v1/vouchers/{code}` | — | one by `VchCode` |
+| `POST /v1/vouchers` | JSON body | post (same body as `/op` post-voucher) |
+| `DELETE /v1/vouchers/{code}` | — | delete |
+| `GET /v1/reports/{name}?…` | — | named reports (account-balance, group-balance, trial-balance, stock-status) |
+
+List results carry a page envelope:
+
+```json
+{"ok":true,"resource":"v1/accounts","result":{
+  "items":[…],
+  "page":{"limit":100,"has_more":true,"next_cursor":"Tm8gU3VjaCBBY2NvdW50"}}}
+```
+
+`next_cursor` is **opaque** (base64url of the internal keyset key) — pass
+it back as `?cursor=` on the next request; `null` means the last page.
+Cursors are stable keyset positions: pages never overlap or skip, even
+while data changes. Bad `cursor`/`limit` → 400 `bad_args`.
+XML mode: the standard `<Op>` envelope (`<name>v1/accounts</name>`).
 
 Errors are `<Error code='400|500' error='…'>` or
 `{"ok":false,"code":"…","error":"…"}` with matching HTTP status. `code` is

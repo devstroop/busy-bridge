@@ -89,11 +89,18 @@ pub fn rowsJson(alloc: Allocator, rows: *const json.Value, cap: usize) ![]u8 {
 /// `{"ok":true,"op":"list-accounts","result":{...}}` — mirrors the raw
 /// `call` envelope shape (result lives at `.result`).
 pub fn opJson(alloc: Allocator, op_name: []const u8, v: *const json.Value) ![]u8 {
+    return opJsonNamed(alloc, "op", op_name, v);
+}
+
+/// Same envelope with a caller-chosen key ("op" for /op and CLI,
+/// "resource" for the /v1 facade — issue #7).
+pub fn opJsonNamed(alloc: Allocator, key: []const u8, name: []const u8, v: *const json.Value) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     var w = json.Writer{ .buf = &out, .alloc = alloc };
-    try w.raw("{\"ok\":true,\"op\":");
-    try w.str(op_name);
+    try w.raw("{\"ok\":true,");
+    try w.field(key);
+    try w.str(name);
     try w.raw(",\"result\":");
     try json.stringify(v, &w);
     try w.raw("}");

@@ -12,7 +12,7 @@ use them as a plain backlog.
 | 004 | [Remote exposure: auth & exposure policy](004-remote-exposure-auth.md) | security | M | ✅ closed 2026-10-09 | 002 |
 | 005 | [Multi-company sessions in serve](005-multi-company-sessions.md) | enhancement | M | ✅ closed 2026-10-09 | — |
 | 006 | [Voucher write validation + Tran1 semantics](006-voucher-write-validation.md) | tests | S | ✅ closed 2026-10-09 | — |
-| 007 | [ERP-centric facade v1 (RFC)](007-erp-facade-rfc.md) | rfc, enhancement | L | open (core/ops CLI slice done) | 002, 005 |
+| 007 | [ERP-centric facade v1 (RFC)](007-erp-facade-rfc.md) | rfc, enhancement | L | ✅ closed 2026-10-09 | 002, 005 |
 | 008 | [MCP server over the facade](008-mcp-server.md) | enhancement, ai | M | open | 007, 004 |
 | 009 | [Record/replay fixtures for CI](009-record-replay-ci.md) | tests, ci | M | open | — |
 | 010 | [Release artifacts & real versioning](010-release-artifacts.md) | ops | S | open | remote |

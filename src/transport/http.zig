@@ -18,6 +18,7 @@ const envelope = @import("envelope.zig");
 const format = @import("format.zig");
 const auth = @import("auth.zig");
 const sessions = @import("sessions.zig");
+const v1 = @import("v1.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -247,7 +248,7 @@ fn route(
     // (query, wins) or X-Company (header); default = the serve --comp.
     // Swap happens here - one company open at a time (BUSY COM state is
     // process-global, first-open-wins; see sessions.zig header comment).
-    if (eql(path, "/query") or eql(path, "/call") or startsWithCi(path, "/op")) {
+    if (eql(path, "/query") or eql(path, "/call") or startsWithCi(path, "/op") or startsWithCi(path, "/v1")) {
         const sel: ?[]const u8 = blk: {
             if (try qparam(ralloc, query, "comp")) |c| break :blk c;
             if (ctx.company_hdr.len > 0) break :blk ctx.company_hdr;
@@ -313,6 +314,13 @@ fn route(
         if (fmt == .xml)
             return .{ .status = "200 OK", .content_type = xct, .payload = try format.constantsXml(ralloc) };
         return .{ .status = "200 OK", .content_type = jct, .payload = try format.constantsJson(ralloc) };
+    }
+
+    // ---- versioned ERP resource facade (issue #7): /v1 ----
+    if (startsWithCi(path, "/v1")) {
+        if (try v1.route(ralloc, ctx.sess, fmt, verb, path, query, body)) |r| {
+            return .{ .status = r.status, .content_type = r.content_type, .payload = r.payload };
+        }
     }
 
     // ---- operations facade (issue #7): normalized reads over raw COM ----
@@ -644,7 +652,7 @@ fn route(
     return .{
         .status = "404 Not Found",
         .content_type = ctOf(fmt),
-        .payload = try errPayload(ralloc, fmt, "404", "not_found", "unknown route (see /health /info /constants /surface /classes /query /call /op)"),
+        .payload = try errPayload(ralloc, fmt, "404", "not_found", "unknown route (see /health /info /constants /surface /classes /query /call /op /v1)"),
     };
 }
 

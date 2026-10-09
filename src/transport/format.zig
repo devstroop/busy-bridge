@@ -218,7 +218,7 @@ pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp
     try w.raw(",\"switches\":");
     var sbuf: [20]u8 = undefined;
     try w.raw(std.fmt.bufPrint(&sbuf, "{d}", .{switches}) catch unreachable);
-    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\",\"/op/report\"]}");
+    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\",\"/op/report\",\"/v1\"]}");
     return out.toOwnedSlice(alloc);
 }
 
@@ -234,7 +234,7 @@ pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp:
     try out.appendSlice(alloc, "' switches='");
     var sbuf: [20]u8 = undefined;
     try out.appendSlice(alloc, std.fmt.bufPrint(&sbuf, "{d}", .{switches}) catch unreachable);
-    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/><Route path='/op/report'/></Info>");
+    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/><Route path='/op/report'/><Route path='/v1'/></Info>");
     return out.toOwnedSlice(alloc);
 }
 
@@ -514,4 +514,5 @@ test "test aggregation for the build test root" {
     _ = @import("../core/ops.zig"); // issue #7 ops layer (pure suites)
     _ = @import("envelope.zig");
     _ = @import("sessions.zig"); // issue #5 multi-company switcher (pure suites)
+    _ = @import("v1.zig"); // issue #7 /v1 facade (pure suites)
 }

@@ -13,7 +13,8 @@ $scripts = @(
     '07-ops-writes.ps1',
     '08-reports.ps1',
     '09-auth.ps1',
-    '10-multi-company.ps1'
+    '10-multi-company.ps1',
+    '11-v1.ps1'
 )
 $failed = 0
 foreach ($t in $scripts) {

@@ -50,17 +50,46 @@ pub const ListOpts = struct {
     /// Case-insensitive substring filter on Name — applied client-side
     /// because GetRecordset's LIKE silently returns empty (issue #6).
     q: ?[]const u8 = null,
+    /// Keyset cursor (issue #7 /v1 paging): the `next_cursor` from a
+    /// previous page — the last-shown Name. Rows resume strictly after it
+    /// (ORDER BY Name ASC), so pages never overlap or skip.
+    cursor: ?[]const u8 = null,
 };
 
 /// List masters of `kind` normalized to
-/// `{kind, count, truncated, items: [{code, name, parent}]}`.
+/// `{kind, count, truncated, items: [{code, name, parent}], page}`.
+/// `page` = `{limit, has_more, next_cursor}` (opaque; null cursor on the
+/// last page).
 pub fn list(sess: *Session, alloc: Allocator, kind: Kind, opts: ListOpts) !json.Value {
     const mt = typeCode(kind);
+    var keyset: []const u8 = "";
+    var keyset_owned: ?[]u8 = null;
+    defer if (keyset_owned) |k| alloc.free(k);
+    if (opts.cursor) |cur| {
+        const decoded = common.decodeCursor(alloc, cur) catch {
+            sess.setErr("invalid cursor (use next_cursor from a previous page)", .{});
+            return error.BadArgs;
+        };
+        defer alloc.free(decoded);
+        const quoted = try helpers.sqlQuote(alloc, decoded);
+        defer alloc.free(quoted);
+        const ks = try std.fmt.allocPrint(alloc, " AND Name > '{s}'", .{quoted});
+        keyset = ks;
+        keyset_owned = ks;
+    }
+    // limit=0 = unlimited: no TOP clause at all
+    var top_owned: ?[]u8 = null;
+    defer if (top_owned) |t| alloc.free(t);
+    var top: []const u8 = "";
+    if (opts.limit != 0) {
+        top_owned = try std.fmt.allocPrint(alloc, "TOP {d} ", .{opts.limit + 1});
+        top = top_owned.?;
+    }
     const sql = if (opts.q == null)
         // fetch limit+1 so "more rows exist" is detectable without a COUNT
-        try std.fmt.allocPrint(alloc, "SELECT TOP {d} Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d} ORDER BY Name", .{ opts.limit + 1, mt })
+        try std.fmt.allocPrint(alloc, "SELECT {s}Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s} ORDER BY Name", .{ top, mt, keyset })
     else
-        try std.fmt.allocPrint(alloc, "SELECT Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d} ORDER BY Name", .{mt});
+        try std.fmt.allocPrint(alloc, "SELECT Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s} ORDER BY Name", .{ mt, keyset });
     defer alloc.free(sql);
 
     const rows = try sess.queryToJson(sql);
@@ -132,6 +161,22 @@ pub fn list(sess: *Session, alloc: Allocator, kind: Kind, opts: ListOpts) !json.
     try common.put(alloc, &out, "count", .{ .int = @intCast(shown) });
     try common.put(alloc, &out, "truncated", .{ .bool = truncated });
     try common.put(alloc, &out, "items", .{ .arr = try items.toOwnedSlice(alloc) });
+    // page envelope (issue #7 /v1): next_cursor = base64url(last shown Name)
+    var page: std.ArrayList(json.Value.Entry) = .empty;
+    try common.put(alloc, &page, "limit", .{ .int = @intCast(opts.limit) });
+    try common.put(alloc, &page, "has_more", .{ .bool = truncated });
+    if (truncated and shown > 0) {
+        const last = rows.arr[matched.items[shown - 1]].get("Name") orelse return error.UnexpectedRows;
+        if (try common.stringifyValue(alloc, last)) |last_name| {
+            defer alloc.free(last_name);
+            try common.put(alloc, &page, "next_cursor", .{ .str = try common.encodeCursor(alloc, last_name) });
+        } else {
+            try common.put(alloc, &page, "next_cursor", .{ .null = {} });
+        }
+    } else {
+        try common.put(alloc, &page, "next_cursor", .{ .null = {} });
+    }
+    try common.put(alloc, &out, "page", try common.objFrom(alloc, &page));
     return common.objFrom(alloc, &out);
 }
 

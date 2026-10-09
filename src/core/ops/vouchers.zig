@@ -18,10 +18,16 @@ pub const ListOpts = struct {
     type_name: ?[]const u8 = null,
     /// 0 = unlimited.
     limit: usize = 100,
+    /// Keyset cursor (issue #7 /v1 paging): the `next_cursor` from a
+    /// previous page — the last-shown VchCode (decimal, encoded). Paging
+    /// orders by VchCode DESC (VchCode is monotonic, so pages are stable);
+    /// the default no-cursor order stays Date DESC for display.
+    cursor: ?[]const u8 = null,
 };
 
 /// List vouchers normalized to
-/// `{kind, count, truncated, items: [{code, type, no, date, series, party}]}`.
+/// `{kind, count, truncated, items: [{code, type, no, date, series, party}],
+/// page: {limit, has_more, next_cursor}}`.
 pub fn list(sess: *Session, alloc: Allocator, opts: ListOpts) !json.Value {
     var where: []const u8 = "";
     var where_owned: ?[]u8 = null;
@@ -34,7 +40,41 @@ pub fn list(sess: *Session, alloc: Allocator, opts: ListOpts) !json.Value {
         where_owned = try std.fmt.allocPrint(alloc, " WHERE VchType = {d}", .{tc});
         where = where_owned.?;
     }
-    const sql = try std.fmt.allocPrint(alloc, "SELECT TOP {d} VchCode, VchType, VchNo, Date, VchSeriesCode, MasterCode1 FROM Tran1{s} ORDER BY Date DESC, VchCode DESC", .{ opts.limit + 1, where });
+    // keyset cursor: resume strictly below the last-shown code
+    var keyset_owned: ?[]u8 = null;
+    defer if (keyset_owned) |k| alloc.free(k);
+    if (opts.cursor) |cur| {
+        const decoded = common.decodeCursor(alloc, cur) catch {
+            sess.setErr("invalid cursor (use next_cursor from a previous page)", .{});
+            return error.BadArgs;
+        };
+        defer alloc.free(decoded);
+        const code = std.fmt.parseInt(i64, decoded, 10) catch {
+            sess.setErr("invalid cursor (use next_cursor from a previous page)", .{});
+            return error.BadArgs;
+        };
+        const conj: []const u8 = if (opts.type_name != null) " AND" else " WHERE";
+        keyset_owned = try std.fmt.allocPrint(alloc, "{s} VchCode < {d}", .{ conj, code });
+        if (where_owned) |w| {
+            const combined = try std.fmt.allocPrint(alloc, "{s}{s}", .{ w, keyset_owned.? });
+            alloc.free(w);
+            where_owned = combined;
+            where = combined;
+        } else {
+            where = keyset_owned.?;
+        }
+    }
+    // paging order must match the keyset (VchCode DESC); display order otherwise
+    const order: []const u8 = if (opts.cursor != null) "VchCode DESC" else "Date DESC, VchCode DESC";
+    // limit=0 = unlimited: no TOP clause at all
+    var top_owned: ?[]u8 = null;
+    defer if (top_owned) |t| alloc.free(t);
+    var top: []const u8 = "";
+    if (opts.limit != 0) {
+        top_owned = try std.fmt.allocPrint(alloc, "TOP {d} ", .{opts.limit + 1});
+        top = top_owned.?;
+    }
+    const sql = try std.fmt.allocPrint(alloc, "SELECT {s}VchCode, VchType, VchNo, Date, VchSeriesCode, MasterCode1 FROM Tran1{s} ORDER BY {s}", .{ top, where, order });
     defer alloc.free(sql);
 
     const rows = try sess.queryToJson(sql);
@@ -133,6 +173,23 @@ pub fn list(sess: *Session, alloc: Allocator, opts: ListOpts) !json.Value {
     try common.put(alloc, &out, "count", .{ .int = @intCast(shown) });
     try common.put(alloc, &out, "truncated", .{ .bool = truncated });
     try common.put(alloc, &out, "items", .{ .arr = try items.toOwnedSlice(alloc) });
+    // page envelope (issue #7 /v1): next_cursor = base64url(last shown VchCode)
+    var page: std.ArrayList(json.Value.Entry) = .empty;
+    try common.put(alloc, &page, "limit", .{ .int = @intCast(opts.limit) });
+    try common.put(alloc, &page, "has_more", .{ .bool = truncated });
+    if (truncated and shown > 0) {
+        const last = rows.arr[shown - 1].get("VchCode") orelse return error.UnexpectedRows;
+        if (last.* == .int) {
+            var b: [24]u8 = undefined;
+            const text = try std.fmt.bufPrint(&b, "{d}", .{last.int});
+            try common.put(alloc, &page, "next_cursor", .{ .str = try common.encodeCursor(alloc, text) });
+        } else {
+            try common.put(alloc, &page, "next_cursor", .{ .null = {} });
+        }
+    } else {
+        try common.put(alloc, &page, "next_cursor", .{ .null = {} });
+    }
+    try common.put(alloc, &out, "page", try common.objFrom(alloc, &page));
     return common.objFrom(alloc, &out);
 }
 
