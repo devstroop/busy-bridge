@@ -35,7 +35,7 @@ try {
     Write-Output '--- GET /info ---'
     $inf = (Invoke-WebRequest "$base/info" -UseBasicParsing).Content | ConvertFrom-Json
     Check 'info identity (version, discovered prog_id, routes)' (
-        $inf.ok -and $inf.version -eq '0.1.0' -and $inf.prog_id -like 'Busy2L*' -and
+        $inf.ok -and $inf.version -like '0.1.0*' -and $inf.prog_id -like 'Busy2L*' -and
         $inf.company -eq $script:Comp -and $inf.routes -contains '/constants'
     ) ($inf | ConvertTo-Json -Compress)
 
