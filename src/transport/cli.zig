@@ -1,10 +1,15 @@
 //! CLI surface: usage text, option defaults, argument access.
 const std = @import("std");
+const build_options = @import("build_options");
 const registry = @import("../core/registry.zig");
 const ops = @import("../core/ops.zig");
 const sqlguard = @import("../util/sqlguard.zig");
 
-pub const VERSION = "0.1.0";
+/// Release version + commit, injected at build time from `git describe`
+/// (issue 010): a clean `vX.Y.Z` checkout reports exactly `X.Y.Z`.
+/// Tarball builds outside a checkout fall back to `0.1.0`/`unknown`.
+pub const VERSION: []const u8 = build_options.version;
+pub const COMMIT: []const u8 = build_options.commit;
 
 pub const DEFAULT_BUSY = "C:\\BusyWin\\";
 pub const DEFAULT_DATA = "C:\\BusyWin\\DATA\\";

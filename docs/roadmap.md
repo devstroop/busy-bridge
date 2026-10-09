@@ -111,7 +111,7 @@ flowchart TD
 
 ### H3 — Engineering operations
 - [`009-record-replay-ci.md`](issues/009-record-replay-ci.md) — replay COM fixtures in CI (live BUSY can't run on runners)
-- [`010-release-artifacts.md`](issues/010-release-artifacts.md) — tags, checksummed x86 artifacts, real versioning (0.1.0 is currently hardcoded)
+- [`010-release-artifacts.md`](issues/010-release-artifacts.md) — tags, checksummed x86 artifacts, real versioning (`v0.1.0` shipped; version is git-derived — see [CHANGELOG](../CHANGELOG.md))
 - Docs policy: regenerate `function-reference.md` after every BUSY upgrade (script exists; requires the machine with BUSY); archive is immutable.
 
 ## Known constraints (documented, not planned for change)

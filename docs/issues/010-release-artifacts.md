@@ -1,16 +1,18 @@
 # 010 · Release artifacts & real versioning
 
-**Labels:** `ops` · **Effort:** S · **Status:** open · **Milestone:** H3
+**Labels:** `ops` · **Effort:** S · **Status:** in progress (release flow
+shipped 2026-10-09; version-from-git + CHANGELOG landing) · **Milestone:** H3
 **Blocked by:** a GitHub remote (push was deferred at session end)
 
 ## Problem
 
-- `version` reports a hardcoded `0.1.0` (baked at compile time via
-  `comptime`), unrelated to any tag.
-- There is no remote, no tags, no CHANGELOG — the only distribution path is
-  cloning this folder and running `zig build`.
-- Nothing proves the CI actually passes on GitHub (it was written but never
-  run against the service).
+- `version` reported a hardcoded `0.1.0` (baked at compile time via
+  `comptime`), unrelated to any tag — now git-derived (see proposal 2).
+- There was no remote, no tags, no CHANGELOG — the only distribution path
+  was cloning this folder and running `zig build`. Remote, `v0.1.0`, and
+  the tag-triggered release workflow now exist.
+- Nothing proved the CI actually passed on GitHub (it was written but never
+  run against the service) — CI + Release are both green on the remote.
 
 ## Proposal
 
@@ -28,11 +30,12 @@
 
 ## Acceptance criteria
 
-- [ ] CI green on the GitHub remote (all jobs: fmt, layers, build, tests, smoke).
-- [ ] `busy-bridge version` shows tag-derived version + short commit.
-- [ ] `v0.1.0` tagged; release page carries checksummed artifact.
-- [ ] CHANGELOG covers 0.1.0; `docs/README.md` links release/download instructions.
-- [ ] Reproducible: fresh clone + `zig build` yields the released binary behavior (no hidden local state).
+- [x] CI green on the GitHub remote (all jobs: fmt, layers, build, tests, smoke).
+- [ ] `busy-bridge version` shows tag-derived version + short commit
+      (implemented; green CI run pending on merge).
+- [x] `v0.1.0` tagged; release page carries checksummed artifact.
+- [x] CHANGELOG covers 0.1.0; `docs/README.md` links release/download instructions.
+- [x] Reproducible: fresh clone + `zig build` yields the released binary behavior (no hidden local state).
 
 ## Notes
 

@@ -53,7 +53,7 @@ pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
         return 0;
     }
     if (eql(cmd_name, "version")) {
-        try printOut(io, alloc, "busy-bridge " ++ cli_mod.VERSION ++ " (zig " ++ comptime versionString() ++ ", x86-windows)\n");
+        try printOut(io, alloc, "busy-bridge " ++ cli_mod.VERSION ++ " (commit " ++ cli_mod.COMMIT ++ ", zig " ++ comptime versionString() ++ ", x86-windows)\n");
         return 0;
     }
     const fmt: Format = format.fromOutFlag(cli.getOr("--out", "json")) catch {

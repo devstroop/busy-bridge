@@ -23,6 +23,17 @@ verified against a live installation (company DEMO) during the migration.
 The wire contract (JSON/XML negotiation, envelopes, mapping rules) is
 specified in the repository [README](../README.md).
 
+## Releases
+
+Tagged `vX.Y.Z` builds ship a checksummed Windows x86 binary from the
+[releases page](https://github.com/devstroop/busy-bridge/releases):
+`busy-bridge-vX.Y.Z-windows-x86.zip` (bare `busy-bridge.exe` +
+`SHA256SUMS`) plus a detached `.sha256` for the zip. The binary reports
+its own provenance — `busy-bridge version` prints the tag-derived
+version and short commit. Fresh clone + `zig build` reproduces the
+released behavior; per-release notes live in
+[`../CHANGELOG.md`](../CHANGELOG.md).
+
 ## Direction
 
 - [Roadmap & future direction](roadmap.md) — horizons: contract hardening →

@@ -32,4 +32,4 @@ Discover the newest available `CFixedInterface` at startup:
 ## Notes
 
 - Discovery cost is per-process; CLI invocations pay it once (measure: `CLSIDFromProgID` on miss is microseconds).
-- Related: hardcoded `0.1.0` version string (see [010](010-release-artifacts.md)).
+- Related: version string was hardcoded `0.1.0` at the time — now git-derived (see [010](010-release-artifacts.md)).
