@@ -17,3 +17,9 @@ use them as a plain backlog.
 | 009 | [Record/replay fixtures for CI](009-record-replay-ci.md) | tests, ci | M | open | — |
 | 010 | [Release artifacts & real versioning](010-release-artifacts.md) | ops | S | open | remote |
 | 011 | [Source restructure: split oversized modules](011-source-restructure.md) | refactor, chore | M | ✅ closed 2026-10-09 | — |
+| 012 | [Package split: busy-com driver + app](https://github.com/devstroop/busy-bridge/issues/12) | refactor, architecture | M | open — **tracked on GitHub** | 011 |
+
+> **Active issues are maintained on [GitHub Issues](https://github.com/devstroop/busy-bridge/issues)**
+> (012 there = this table's 012; 011 also migrated as a closed record).
+> This table and the sibling files are the closed **001–011 history archive** —
+> no new issue files are added here.
