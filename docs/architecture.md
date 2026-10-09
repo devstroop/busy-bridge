@@ -28,6 +28,8 @@ src/
 │   ├── exec.zig      write-op dispatcher (CLI + HTTP + batch share it)
 │   ├── batch.zig     BeginTran/CommitTran batch runner
 │   ├── catalog.zig   op catalog as data (by design: pure table)
+│   ├── auth.zig      BUSY-011 login primitives (CheckIfLoginDetRequired/
+│   │                 ValidUserPassword/GetCompConfigJSON via aux classes)
 │   └── golden.zig    golden-read flow script for `busy-bridge record` (issue 009)
 ├── core/                 BUSY domain — never imports transport
 │   ├── com.zig + com/    raw IDispatch FFI: Session, invoke, recordset, surface
@@ -42,6 +44,7 @@ src/
 │   ├── http/
 │   │   ├── shared.zig    ConnCtx/Route + envelope/mapping helpers
 │   │   ├── routes_meta.zig   /health /surface /classes /info /constants
+│   │   ├── routes_auth.zig   /auth/login /auth/me /auth/logout (BUSY-011)
 │   │   ├── routes_ops.zig    /op/*
 │   │   └── routes_raw.zig    /query /call
 │   ├── format.zig        barrel + THE zig-build-test aggregation root
@@ -51,6 +54,7 @@ src/
 │   │                         rowset/call payload builders
 │   ├── v1.zig            /v1 versioned resource facade + cursor paging
 │   ├── sessions.zig      multi-company Switcher (issue #5)
+│   ├── user_sessions.zig BUSY-010 opaque user-session tokens + TTLs
 │   ├── envelope.zig      JSON wire envelopes (ok/err/op/rows)
 │   ├── auth.zig          token gate + safe-bind policy (issue #4)
 │   └── cli.zig           argv parsing, Usage, option helpers

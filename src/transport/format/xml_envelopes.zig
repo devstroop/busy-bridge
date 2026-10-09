@@ -118,7 +118,9 @@ pub fn constantsXml(alloc: Allocator) ![]u8 {
 
 /// GET /info — identity/capabilities of the running serve process.
 /// `switches` = successful per-request company switches (issue #5).
-pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8, switches: u64) ![]u8 {
+/// `auth_mode` (contract §5): off | token | session — the credential
+/// policy this serve enforces.
+pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8, switches: u64, auth_mode: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     var w = json.Writer{ .buf = &out, .alloc = alloc };
@@ -131,11 +133,13 @@ pub fn infoJson(alloc: Allocator, version: []const u8, prog_id: []const u8, comp
     try w.raw(",\"switches\":");
     var sbuf: [20]u8 = undefined;
     try w.raw(std.fmt.bufPrint(&sbuf, "{d}", .{switches}) catch unreachable);
-    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\",\"/op/report\",\"/v1\"]}");
+    try w.raw(",\"auth_mode\":");
+    try w.str(auth_mode);
+    try w.raw(",\"formats\":[\"json\",\"xml\"],\"routes\":[\"/health\",\"/info\",\"/constants\",\"/surface\",\"/classes\",\"/query\",\"/call\",\"/auth/login\",\"/auth/me\",\"/auth/logout\",\"/op\",\"/op/accounts\",\"/op/account\",\"/op/items\",\"/op/item\",\"/op/vouchers\",\"/op/voucher\",\"/op/batch\",\"/op/report\",\"/v1\"]}");
     return out.toOwnedSlice(alloc);
 }
 
-pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8, switches: u64) ![]u8 {
+pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp: ?[]const u8, switches: u64, auth_mode: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     try out.appendSlice(alloc, "<Info bridge='busy-bridge' version='");
@@ -147,7 +151,9 @@ pub fn infoXml(alloc: Allocator, version: []const u8, prog_id: []const u8, comp:
     try out.appendSlice(alloc, "' switches='");
     var sbuf: [20]u8 = undefined;
     try out.appendSlice(alloc, std.fmt.bufPrint(&sbuf, "{d}", .{switches}) catch unreachable);
-    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/><Route path='/op/report'/><Route path='/v1'/></Info>");
+    try out.appendSlice(alloc, "' auth_mode='");
+    try xml_write.escapeAttr(alloc, &out, auth_mode);
+    try out.appendSlice(alloc, "'><Format>json</Format><Format>xml</Format><Route path='/health'/><Route path='/info'/><Route path='/constants'/><Route path='/surface'/><Route path='/classes'/><Route path='/query'/><Route path='/call'/><Route path='/auth/login'/><Route path='/auth/me'/><Route path='/auth/logout'/><Route path='/op'/><Route path='/op/accounts'/><Route path='/op/account'/><Route path='/op/items'/><Route path='/op/item'/><Route path='/op/vouchers'/><Route path='/op/voucher'/><Route path='/op/batch'/><Route path='/op/report'/><Route path='/v1'/></Info>");
     return out.toOwnedSlice(alloc);
 }
 

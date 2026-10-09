@@ -1,6 +1,40 @@
 //! Raw COM/OLE FFI for 32-bit Windows: extern declarations, GUIDs, VARIANT,
 //! DISPPARAMS, and the IErrorInfo/IDispatch/ITypeInfo vtable layouts.
 //! TYPEATTR/FUNCDESC byte offsets used by callers are x86 layouts (oaidl.h).
+const std = @import("std");
+
+extern "kernel32" fn GetSystemTimeAsFileTime(lpTime: *FILETIME) callconv(.winapi) void;
+
+pub const FILETIME = extern struct {
+    dwLowDateTime: u32,
+    dwHighDateTime: u32,
+};
+
+/// Wall-clock seconds since the Unix epoch (Zig 0.17 removed
+/// std.time.timestamp; FILETIME is 100ns since 1601-01-01).
+pub fn unixSeconds() i64 {
+    var ft: FILETIME = undefined;
+    GetSystemTimeAsFileTime(&ft);
+    const t = (@as(u64, ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+    return @intCast(t / 10_000_000 - 11_644_473_600);
+}
+
+extern "bcrypt" fn BCryptGenRandom(
+    hAlgorithm: ?*anyopaque,
+    pbBuffer: [*]u8,
+    cbBuffer: u32,
+    dwFlags: u32,
+) callconv(.winapi) i32;
+
+const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x2;
+
+/// Fill `buf` with cryptographically secure random bytes
+/// (BCryptGenRandom, system-preferred RNG; Zig 0.17 removed
+/// std.crypto.random). Panics only if the OS CSPRNG fails.
+pub fn secureRandom(buf: []u8) void {
+    const rc = BCryptGenRandom(null, buf.ptr, @intCast(buf.len), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    if (rc != 0) std.debug.panic("BCryptGenRandom failed: 0x{x}", .{@as(u32, @bitCast(rc))});
+}
 
 pub const GUID = extern struct {
     Data1: u32,

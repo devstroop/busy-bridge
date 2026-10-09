@@ -23,8 +23,11 @@ const envelope = @import("envelope.zig");
 const format = @import("format.zig");
 const auth = @import("auth.zig");
 const sessions = @import("sessions.zig");
+const user_sessions = @import("user_sessions.zig");
+const win32 = @import("../core/com/win32.zig");
 const v1 = @import("v1.zig");
 const shared = @import("http/shared.zig");
+const routes_auth = @import("http/routes_auth.zig");
 const routes_meta = @import("http/routes_meta.zig");
 const routes_ops = @import("http/routes_ops.zig");
 const routes_raw = @import("http/routes_raw.zig");
@@ -130,6 +133,7 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
 
     var rctx = ctx;
     rctx.company_hdr = xcompany_hdr;
+    rctx.user_token = auth.bearerOf(auth_hdr) orelse "";
     const r = route(rctx, ralloc, fmt, verb, path, query, body, ctype_hdr) catch |err| blk: {
         var cb: [64]u8 = undefined;
         const msg = if (ctx.sess.lastError().len > 0) ctx.sess.lastError() else @errorName(err);
@@ -177,6 +181,25 @@ fn route(
                 };
             return err;
         };
+    }
+
+    // Session gate (contract §5, provisional enforcement): when armed,
+    // the facade surfaces need a valid user session. Raw /call /query
+    // stay device-tier until BUSY-013 decides the operator boundary.
+    if (ctx.require_session and (startsWithCi(path, "/v1") or startsWithCi(path, "/op"))) {
+        if (ctx.us.verify(ctx.user_token, win32.unixSeconds()) == null) {
+            return .{
+                .status = "401 Unauthorized",
+                .content_type = ctOf(fmt),
+                .payload = try errPayload(ralloc, fmt, "401", "unauthorized", "valid user session required (POST /auth/login; serve runs with --require-session)"),
+            };
+        }
+    }
+
+    // Auth endpoints (BUSY-010/011): before meta — identity precedes
+    // capability discovery, and login must not depend on /info wiring.
+    if (startsWithCi(path, "/auth")) {
+        if (try routes_auth.routeAuth(ctx, ralloc, fmt, verb, path, body)) |r| return r;
     }
 
     if (try routes_meta.routeMeta(ctx, ralloc, fmt, verb, path, query)) |r| return r;
@@ -260,15 +283,42 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
     var sw = try sessions.Switcher.init(alloc, io, o);
     defer sw.deinit();
 
+    // User sessions (BUSY-010): --require-session arms the /v1+/op
+    // session gate (contract §5; auth_mode in /info + boot line).
+    // --super-user selects the provisional full-rights identity.
+    var us = user_sessions.UserSessions.init(alloc);
+    defer us.deinit();
+    if (cli.get("--session-idle-ttl")) |t| {
+        us.idle_ttl = std.fmt.parseInt(i64, t, 10) catch {
+            const et = envelope.errJsonText(alloc, "bad_args", "invalid --session-idle-ttl (seconds)") catch return 1;
+            defer alloc.free(et);
+            try printOut(io, alloc, et);
+            try printOut(io, alloc, "\n");
+            return 1;
+        };
+    }
+    if (cli.get("--session-abs-ttl")) |t| {
+        us.abs_ttl = std.fmt.parseInt(i64, t, 10) catch {
+            const et = envelope.errJsonText(alloc, "bad_args", "invalid --session-abs-ttl (seconds)") catch return 1;
+            defer alloc.free(et);
+            try printOut(io, alloc, et);
+            try printOut(io, alloc, "\n");
+            return 1;
+        };
+    }
+    const require_session = cli.flag("--require-session");
+    const super_user = cli.getOr("--super-user", "Admin");
+
     const addr = try Io.net.IpAddress.parse(host, port);
     var server = try addr.listen(io, .{});
     defer server.deinit(io);
 
     const mode_wire = if (guard.mode == .read_only) "read-only" else @tagName(guard.mode);
+    const auth_mode = if (require_session) "session" else if (token != null) "token" else "off";
     const boot = try std.fmt.allocPrint(alloc,
-        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s},"multi_company":true}}
+        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s},"auth_mode":"{s}","multi_company":true}}
         \\
-    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows, if (token != null) "true" else "false" });
+    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows, if (token != null) "true" else "false", auth_mode });
     defer alloc.free(boot);
     try printOut(io, alloc, boot);
 
@@ -281,6 +331,9 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
         .query_mode = guard.mode,
         .max_rows = guard.max_rows,
         .token = token,
+        .us = &us,
+        .super_user = super_user,
+        .require_session = require_session,
     };
     while (true) {
         var stream = server.accept(io) catch |err| {

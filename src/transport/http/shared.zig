@@ -11,6 +11,7 @@ const cli_mod = @import("../cli.zig");
 const envelope = @import("../envelope.zig");
 const format = @import("../format.zig");
 const sessions = @import("../sessions.zig");
+const user_sessions = @import("../user_sessions.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -32,6 +33,17 @@ pub const ConnCtx = struct {
     /// Issue #4 token gate: configured token, or null (loopback mode,
     /// gate disarmed - byte-identical pre-#4 behavior).
     token: ?[]const u8,
+    /// BUSY-010: user-session store (login/me/logout + session gate).
+    us: *user_sessions.UserSessions,
+    /// BUSY-011 provisional rights: super user gets full rights, all
+    /// others deny-all until per-user rights capture (contract §3).
+    super_user: []const u8,
+    /// When true, /v1 and /op require a valid user session (contract §5;
+    /// raw /call /query stay device-tier until BUSY-013).
+    require_session: bool,
+    /// Bearer credential extracted per request ("" = none); the device
+    /// gate in handleConn already ran. Feeds session verify + gates.
+    user_token: []const u8 = "",
 };
 
 pub const Route = struct {
@@ -52,6 +64,14 @@ pub fn ctOf(fmt: Format) []const u8 {
         .json => format.ct_json,
         .xml => format.ct_xml,
     };
+}
+
+/// Credential policy (contract §5): "session" when the /v1+/op session
+/// gate is armed, else "token" when a device token is configured, else
+/// "off" (loopback dev posture). Reported in GET /info + the boot line.
+pub fn authMode(require_session: bool, token: ?[]const u8) []const u8 {
+    if (require_session) return "session";
+    return if (token != null) "token" else "off";
 }
 
 /// Percent-decoded query parameter lookup (arena-owned result).

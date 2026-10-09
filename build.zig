@@ -30,6 +30,7 @@ pub fn build(b: *std.Build) void {
     mod.linkSystemLibrary("oleaut32", .{});
     mod.linkSystemLibrary("advapi32", .{}); // registry (classes enumeration)
     mod.linkSystemLibrary("ws2_32", .{}); // winsock (HTTP server)
+    mod.linkSystemLibrary("bcrypt", .{}); // BCryptGenRandom (session tokens)
 
     const exe = b.addExecutable(.{
         .name = "busy-bridge",
@@ -56,6 +57,7 @@ pub fn build(b: *std.Build) void {
     test_mod.linkSystemLibrary("oleaut32", .{});
     test_mod.linkSystemLibrary("advapi32", .{});
     test_mod.linkSystemLibrary("ws2_32", .{});
+    test_mod.linkSystemLibrary("bcrypt", .{});
     const tests = b.addTest(.{ .root_module = test_mod });
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
