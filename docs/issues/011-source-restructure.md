@@ -46,9 +46,11 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       verified at baseline: 6 exempt, 0 violations, 50 files), this issue,
       README workflow update, roadmap decision-record amendments.
       *No source moves. Requires review before Phase 1.*
-- [ ] **Phase 1a — masters**: `masters.zig` → barrel (~60) +
-      `masters/read.zig` (~200: list, get) + `masters/write.zig` (~230:
-      fieldsToDoc/docToXml/saveMaster/create/update/delete/requireStr).
+- [x] **Phase 1a — masters**: `masters.zig` → barrel (98: kinds, typeCode,
+      ListOpts, requireStr, re-exports) + `masters/read.zig` (208: list, get)
+      + `masters/write.zig` (278: fieldsToDoc/docToXml/saveMaster/create/
+      update/delete + tests). Dead `groupTypeCode` (zero references) removed.
+      Test count unchanged: 43/43.
 - [ ] **Phase 1b — vouchers**: `vouchers.zig` → barrel (~40) +
       `vouchers/read.zig` (~250) + `vouchers/write.zig` (~330 incl. the
       3 doc-builder tests).

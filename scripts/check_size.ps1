@@ -28,7 +28,6 @@ $exempt = @{
     'src/transport/http.zig'     = '[transitional] issue 011 phase 5: route() split into http/{shared,routes_meta,routes_raw,routes_ops}.zig'
     'src/transport/commands.zig' = '[transitional] issue 011 phase 4: cmd* split into commands/{raw,ops}.zig'
     'src/transport/format.zig'   = '[transitional] issue 011 phase 3: split into format/{wire,call,xml_envelopes}.zig'
-    'src/core/ops/masters.zig'   = '[transitional] issue 011 phase 1a: split into masters/{read,write}.zig'
     'src/core/ops/vouchers.zig'  = '[transitional] issue 011 phase 1b: split into vouchers/{read,write}.zig'
     'src/core/ops/common.zig'    = '[transitional] issue 011 phase 2: split into common/{value,sql,dates,cursor}.zig'
     # --- by design (permanent) ---
