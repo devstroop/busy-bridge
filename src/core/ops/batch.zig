@@ -23,6 +23,34 @@ fn tranProgId(alloc: Allocator) ![]u8 {
     return std.fmt.allocPrint(alloc, "{s}COtherServices", .{fi[0..i]});
 }
 
+/// Validate one entry's shape (object + string `op` + batchable write
+/// op + `args` present) WITHOUT touching COM or the registry — input
+/// errors must surface even on machines without BUSY installed (CI
+/// runners); asserted by the "before touching COM" unit test and the
+/// same pattern as cmdQuery's refuse-before-COM contract.
+fn validateEntry(entry: *const json.Value, i: usize, sess: *Session) !void {
+    if (entry.* != .obj) {
+        sess.setErr("batch entry [{d}] must be an object {{\"op\":...,\"args\":{{...}}}}", .{i});
+        return error.BadArgs;
+    }
+    const op_v = entry.get("op") orelse {
+        sess.setErr("batch entry [{d}] missing \"op\"", .{i});
+        return error.BadArgs;
+    };
+    if (op_v.* != .str) {
+        sess.setErr("batch entry [{d}]: \"op\" must be a string", .{i});
+        return error.BadArgs;
+    }
+    if (!exec.isWriteOp(op_v.str)) {
+        sess.setErr("batch entry [{d}]: '{s}' is not a batchable write op", .{ i, op_v.str });
+        return error.BadArgs;
+    }
+    if (entry.get("args") == null) {
+        sess.setErr("batch entry [{d}] missing \"args\"", .{i});
+        return error.BadArgs;
+    }
+}
+
 /// Run write entries `[{"op":"...","args":{...}}, ...]` atomically.
 /// One failure rolls the whole batch back and reports which entry broke
 /// (`code:"batch_rolled_back"` with the underlying message).
@@ -31,6 +59,10 @@ pub fn run(sess: *Session, alloc: Allocator, entries: *const json.Value) !json.V
         sess.setErr("batch requires a non-empty array: [{{\"op\":\"create-account\",\"args\":{{...}}}}, ...]", .{});
         return error.BadArgs;
     }
+    // Shape-validate every entry BEFORE the registry lookup / COM session
+    // (issue CI fix 2026-10-09: on a no-BUSY machine the lookup used to
+    // fail with NoBusyProgId before BadArgs could surface).
+    for (entries.arr, 0..) |*entry, i| try validateEntry(entry, i, sess);
 
     const prog = try tranProgId(alloc);
     defer alloc.free(prog);
@@ -50,32 +82,17 @@ pub fn run(sess: *Session, alloc: Allocator, entries: *const json.Value) !json.V
     }
 
     for (entries.arr, 0..) |*entry, i| {
-        if (entry.* != .obj) {
-            sess.setErr("batch entry [{d}] must be an object {{\"op\":...,\"args\":{{...}}}}", .{i});
-            return error.BadArgs;
-        }
-        const op_v = entry.get("op") orelse {
-            sess.setErr("batch entry [{d}] missing \"op\"", .{i});
-            return error.BadArgs;
-        };
-        if (op_v.* != .str) {
-            sess.setErr("batch entry [{d}]: \"op\" must be a string", .{i});
-            return error.BadArgs;
-        }
-        if (!exec.isWriteOp(op_v.str)) {
-            sess.setErr("batch entry [{d}]: '{s}' is not a batchable write op", .{ i, op_v.str });
-            return error.BadArgs;
-        }
-        const args = entry.get("args") orelse {
-            sess.setErr("batch entry [{d}] missing \"args\"", .{i});
-            return error.BadArgs;
-        };
+        // pre-pass guaranteed validity; re-assert so the unwraps below are
+        // sound even if the pre-pass is ever bypassed
+        try validateEntry(entry, i, sess);
+        const op_str = entry.get("op").?.str;
+        const args = entry.get("args").?;
 
-        const res = exec.run(sess, alloc, op_v.str, args) catch {
+        const res = exec.run(sess, alloc, op_str, args) catch {
             // capture the failing message BEFORE rolling back (the
             // session error buffer still holds it at this point)
             var fail_buf: [700]u8 = undefined;
-            const fail_msg = std.fmt.bufPrint(&fail_buf, "op[{d}] '{s}': {s}", .{ i, op_v.str, sess.lastError() }) catch "batch entry failed";
+            const fail_msg = std.fmt.bufPrint(&fail_buf, "op[{d}] '{s}': {s}", .{ i, op_str, sess.lastError() }) catch "batch entry failed";
             if (ts.invoke("RollBackTran", &.{})) |vr| {
                 var v = vr;
                 v.deinit(ts.alloc);
