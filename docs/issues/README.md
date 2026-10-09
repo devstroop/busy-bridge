@@ -16,4 +16,4 @@ use them as a plain backlog.
 | 008 | [MCP server over the facade](008-mcp-server.md) | enhancement, ai | M | open | 007, 004 |
 | 009 | [Record/replay fixtures for CI](009-record-replay-ci.md) | tests, ci | M | open | — |
 | 010 | [Release artifacts & real versioning](010-release-artifacts.md) | ops | S | open | remote |
-| 011 | [Source restructure: split oversized modules](011-source-restructure.md) | refactor, chore | M | complete on `dev` (merge pending) | — |
+| 011 | [Source restructure: split oversized modules](011-source-restructure.md) | refactor, chore | M | ✅ closed 2026-10-09 | — |

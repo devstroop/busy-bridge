@@ -1,6 +1,6 @@
 # 011 · Source restructure: split oversized modules + structure gates
 
-**Labels:** `refactor` `chore` · **Effort:** M · **Status:** complete on `dev` (merge to `master` pending) · **Milestone:** H3
+**Labels:** `refactor` `chore` · **Effort:** M · **Status:** closed (2026-10-09) · **Milestone:** H3
 
 ## Problem
 
@@ -88,8 +88,9 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       route dispatch contract, how-to-extend, gate table); README links it
       + fixed stale "all three suites" → 11; **size gate wired into CI**
       (`ci.yml` step after the layer check). Final gates + live run green.
-- [ ] **Merge `dev → master`**: coordinate with the session that owns
-      `master` first (fetch/rebase, serialized live run on master).
+- [x] **Merge `dev → master`**: done 2026-10-09 — fast-forward `51a99ec →
+      0e6faf1` (master never moved during the restructure), pushed; post-
+      merge serialized live run on master: all 11 suites green.
 
 ## Decision records
 
