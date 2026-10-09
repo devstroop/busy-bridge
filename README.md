@@ -408,13 +408,16 @@ direction) and `check_size.ps1` (file size — oversized files must be split
 per [issue 011](docs/issues/011-source-restructure.md) or carry a
 documented allowlist entry with a written reason).
 
+**Source layout & conventions** (barrels, test discovery, route dispatch
+order, how to add a command/op/route): [`docs/architecture.md`](docs/architecture.md).
+
 CI (GitHub Actions, ubuntu + windows): fmt → layer check → build → unit
 tests (Windows runner; test binary is x86-windows).
 
 Live-BUSY tests (require BUSY + a company; **not** runnable in CI):
 
 ```powershell
-powershell -File tests/live/run-all.ps1      # all three suites
+powershell -File tests/live/run-all.ps1      # all 11 suites
 powershell -File tests/live/01-roundtrip.ps1 # master create/read/delete (JSON)
 powershell -File tests/live/02-serve-defaults.ps1   # HTTP JSON defaults
 powershell -File tests/live/03-wire-modes.ps1       # both formats x both transports

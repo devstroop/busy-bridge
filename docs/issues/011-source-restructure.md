@@ -1,6 +1,6 @@
 # 011 · Source restructure: split oversized modules + structure gates
 
-**Labels:** `refactor` `chore` · **Effort:** M · **Status:** in progress (Phase 0) · **Milestone:** H3
+**Labels:** `refactor` `chore` · **Effort:** M · **Status:** complete on `dev` (merge to `master` pending) · **Milestone:** H3
 
 ## Problem
 
@@ -83,10 +83,13 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       null = fall through (proven v1.zig pattern). `opOk` now returns
       `!?Route` so groups return it directly. Tests: 73. Size-gate
       transitional list now EMPTY (only by-design entries remain).
-- [ ] **Phase 6 — docs + wrap-up**: architecture note (folder map, barrel
-      convention, "how to add a route/op"), tick phases, final full gates +
-      live run-all; merge `dev → master` **only after** coordinating with
-      the session that owns `master`.
+- [x] **Phase 6 — docs + wrap-up**: `docs/architecture.md` (folder map,
+      barrel convention, test-discovery rules with name-level verification,
+      route dispatch contract, how-to-extend, gate table); README links it
+      + fixed stale "all three suites" → 11; **size gate wired into CI**
+      (`ci.yml` step after the layer check). Final gates + live run green.
+- [ ] **Merge `dev → master`**: coordinate with the session that owns
+      `master` first (fetch/rebase, serialized live run on master).
 
 ## Decision records
 

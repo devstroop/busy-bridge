@@ -73,6 +73,12 @@ jobs:
         shell: pwsh
         run: ./scripts/check_layers.ps1
 
+      # File-size gate (issue 011): src <=400 physical lines, tests <=200;
+      # allowlist entries must carry a written reason.
+      - name: Check file sizes
+        shell: pwsh
+        run: ./scripts/check_size.ps1
+
       # Cross-compiles x86-windows-gnu on Linux; native on Windows.
       - name: Build
         run: zig build
