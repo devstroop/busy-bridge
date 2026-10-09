@@ -24,7 +24,7 @@ const Allocator = std.mem.Allocator;
 /// unknown names — callers must not branch on the unknown-user case
 /// (no enumeration; contract §4). Requires the company open.
 pub fn loginRequired(sess: *busyc.Session, user: []const u8) !bool {
-    var aux = try auxOf(sess, "COtherServices1");
+    var aux = try auxSession(sess, "COtherServices1");
     defer aux.deinit();
     var arg: [1]json.Value = undefined;
     arg[0] = .{ .str = try aux.alloc.dupe(u8, user) };
@@ -60,7 +60,7 @@ pub fn validatePassword(sess: *busyc.Session, user: []const u8, password: []cons
 /// CFixedInterface1 returns a JSON *string* — parsed into a tree here
 /// so the envelope embeds it natively.
 pub fn configPayload(sess: *busyc.Session, alloc: Allocator, fy: i64) !json.Value {
-    var aux = try auxOf(sess, "CFixedInterface1");
+    var aux = try auxSession(sess, "CFixedInterface1");
     defer aux.deinit();
     var arg: [3]json.Value = undefined;
     arg[0] = .{ .bool = false };
@@ -89,8 +89,8 @@ pub fn configPayload(sess: *busyc.Session, alloc: Allocator, fy: i64) !json.Valu
 /// Transient aux dispatch of the newest registered class with the
 /// given suffix — no OpenDB (company state is process-global; probe-
 /// verified via the openCompany aux fallback). Error text funnels into
-/// the main session for the wire envelope.
-fn auxOf(sess: *busyc.Session, suffix: []const u8) !busyc.Session {
+/// the main session for the wire envelope. Shared with `rights.zig`.
+pub fn auxSession(sess: *busyc.Session, suffix: []const u8) !busyc.Session {
     const prog_id = registry.newestProgId(suffix) orelse {
         sess.setErr("no registered Busy2L*.{s} - is this BUSY version missing the class?", .{suffix});
         return error.NoBusyProgId;

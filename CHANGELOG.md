@@ -6,6 +6,15 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- BUSY-012 per-user rights: `CheckUserRightsForReports` semantics
+  probe-verified (super answered unconditionally true; regular users
+  discriminate per repID — user1: 19/201 allowed, 0–15 denied;
+  p_RepID is VB6 Integer); `handlers/rights.zig` resolves normalized
+  contract-§3 rights at `/auth/login` + `/auth/me` (super
+  short-circuit, per-repID sweep fail-closed, deny-all fallback);
+  `reports` keyed by repID (sparse space 0–15 + {19, 21, 201});
+  `voucher_types`/`masters` stay `{}` pending Collection enumeration /
+  no primitive. Probe iteration 7 (43 probes) recorded.
 - BUSY-010/011 auth per the merged contract (`docs/auth-contract.md`):
   opaque 256-bit user-session tokens (BCryptGenRandom, base64url,
   constant-time compare, idle/absolute TTLs; `transport/user_sessions.zig`);

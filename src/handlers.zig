@@ -18,6 +18,7 @@ pub const batch = @import("handlers/batch.zig");
 pub const reports = @import("handlers/reports.zig");
 pub const catalog = @import("handlers/catalog.zig");
 pub const auth = @import("handlers/auth.zig");
+pub const rights = @import("handlers/rights.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -32,6 +33,7 @@ test "test aggregation for handler children" {
     _ = @import("handlers/batch.zig");
     _ = @import("handlers/reports.zig");
     _ = @import("handlers/catalog.zig");
+    _ = @import("handlers/rights.zig"); // BUSY-012 per-user rights (pure suites)
 }
 
 /// Options to open a BUSY company session (domain-level, not CLI-specific).

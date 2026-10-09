@@ -30,6 +30,8 @@ src/
 │   ├── catalog.zig   op catalog as data (by design: pure table)
 │   ├── auth.zig      BUSY-011 login primitives (CheckIfLoginDetRequired/
 │   │                 ValidUserPassword/GetCompConfigJSON via aux classes)
+│   ├── rights.zig    BUSY-012 per-user rights (CheckUserRightsForReports
+│   │                 sweep; deny-by-default, fail-closed)
 │   └── golden.zig    golden-read flow script for `busy-bridge record` (issue 009)
 ├── core/                 BUSY domain — never imports transport
 │   ├── com.zig + com/    raw IDispatch FFI: Session, invoke, recordset, surface
