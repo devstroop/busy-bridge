@@ -69,9 +69,11 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       `format/xml_envelopes.zig` (365: error/constants/info/health/classes/
       surface/rowset/call builders + 3 tests). Test count unchanged: 73
       (6 moved, verified by namespaced name).
-- [ ] **Phase 4 — commands**: → `commands/raw.zig` (classes/surface/query/
-      call) + `commands/ops.zig` (cmdOp/report/write); `run()` dispatcher
-      stays, move `cmd*` bodies verbatim.
+- [x] **Phase 4 — commands**: dispatcher (84: run/fail/failText/
+      versionString — fail helpers now `pub`, children import them back via
+      a lazy cycle proven in phase 1) + `commands/raw.zig` (276:
+      classes/surface/query/call) + `commands/ops.zig` (370: cmdOp/report/
+      write). `run()` switch unchanged. Tests: 73.
 - [ ] **Phase 5 — http (last, highest risk)**: `http/`shared.zig` (Route,
       errPayload, qparam, opOk/opErr) + `http/routes_meta.zig` +
       `http/routes_raw.zig` + `http/routes_ops.zig`. `route()` = thin

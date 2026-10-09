@@ -1,18 +1,15 @@
-//! CLI commands: dispatch + per-command implementations (classes/surface/
-//! query/call); `serve` delegates to http.zig. Response format follows --out
-//! (default json); errors render in the same active format.
+//! CLI dispatch (issue #11 phase 4): route a parsed argv to its command.
+//! Split into responsibility-named submodules:
+//!   commands/raw.zig  classes, surface, query, call — COM escape hatch
+//!   commands/ops.zig  op verb dispatch — ERP facade (issue #7)
+//! This file keeps the dispatcher + shared fail helpers, so the error
+//! envelope is defined exactly once for every CLI failure path.
 const std = @import("std");
 const builtin = @import("builtin");
-const json = @import("../util/json.zig");
-const busyc = @import("../core/com.zig");
 const helpers = @import("../util/helpers.zig");
-const sqlguard = @import("../util/sqlguard.zig");
 const cli_mod = @import("cli.zig");
-const ops = @import("../core/ops.zig");
-const registry = @import("../core/registry.zig");
-const http = @import("http.zig");
-const envelope = @import("envelope.zig");
 const format = @import("format.zig");
+const http = @import("http.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -20,27 +17,23 @@ const Cli = cli_mod.Cli;
 const Format = format.Format;
 
 const eql = helpers.eql;
-const b64Decode = helpers.b64Decode;
 const printOut = helpers.printOut;
-const okWrap = envelope.okWrap;
-const Usage = cli_mod.Usage;
-const optsFrom = cli_mod.optsFrom;
-const openSession = ops.openSession;
-const surfaceText = ops.surfaceText;
-const listBusyClasses = registry.listBusyClasses;
+
+const raw = @import("commands/raw.zig");
+const ops_cmd = @import("commands/ops.zig");
 
 /// Build an error payload in the active wire format (no printing).
 /// `machine` is the stable branchable code (issue #2); `status` for XML is
 /// the process exit code (always 1 for CLI failures).
-fn failText(alloc: Allocator, fmt: Format, machine: []const u8, msg: []const u8) ![]u8 {
+pub fn failText(alloc: Allocator, fmt: Format, machine: []const u8, msg: []const u8) ![]u8 {
     return switch (fmt) {
-        .json => envelope.errJsonText(alloc, machine, msg),
+        .json => @import("envelope.zig").errJsonText(alloc, machine, msg),
         .xml => format.errorXml(alloc, "1", machine, msg),
     };
 }
 
 /// Print an error in the active wire format and return the failure exit code.
-fn fail(io: Io, alloc: Allocator, fmt: Format, machine: []const u8, msg: []const u8) !u8 {
+pub fn fail(io: Io, alloc: Allocator, fmt: Format, machine: []const u8, msg: []const u8) !u8 {
     const t = try failText(alloc, fmt, machine, msg);
     defer alloc.free(t);
     try printOut(io, alloc, t);
@@ -51,32 +44,32 @@ fn fail(io: Io, alloc: Allocator, fmt: Format, machine: []const u8, msg: []const
 /// Route a parsed argv to its command. `cli.items[0]` is the command name.
 pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
     if (cli.items.len == 0) {
-        try printOut(io, alloc, Usage);
+        try printOut(io, alloc, cli_mod.Usage);
         return 1;
     }
-    const cmd = cli.items[0];
-    if (eql(cmd, "help") or eql(cmd, "--help") or eql(cmd, "-h")) {
-        try printOut(io, alloc, Usage);
+    const cmd_name = cli.items[0];
+    if (eql(cmd_name, "help") or eql(cmd_name, "--help") or eql(cmd_name, "-h")) {
+        try printOut(io, alloc, cli_mod.Usage);
         return 0;
     }
-    if (eql(cmd, "version")) {
+    if (eql(cmd_name, "version")) {
         try printOut(io, alloc, "busy-bridge " ++ cli_mod.VERSION ++ " (zig " ++ comptime versionString() ++ ", x86-windows)\n");
         return 0;
     }
     const fmt: Format = format.fromOutFlag(cli.getOr("--out", "json")) catch {
         return fail(io, alloc, .json, "bad_args", "invalid --out value (use json or xml)");
     };
-    if (eql(cmd, "classes")) return cmdClasses(io, alloc, fmt);
-    if (eql(cmd, "surface")) return cmdSurface(io, alloc, cli, fmt);
-    if (eql(cmd, "query")) return cmdQuery(io, alloc, cli, fmt);
-    if (eql(cmd, "op")) return cmdOp(io, alloc, cli, fmt); // ERP facade (issue #7)
-    if (eql(cmd, "call")) return cmdCall(io, alloc, cli, fmt);
-    if (eql(cmd, "serve")) return http.serve(io, alloc, cli); // Accept-negotiated
+    if (eql(cmd_name, "classes")) return raw.cmdClasses(io, alloc, fmt);
+    if (eql(cmd_name, "surface")) return raw.cmdSurface(io, alloc, cli, fmt);
+    if (eql(cmd_name, "query")) return raw.cmdQuery(io, alloc, cli, fmt);
+    if (eql(cmd_name, "op")) return ops_cmd.cmdOp(io, alloc, cli, fmt); // ERP facade (issue #7)
+    if (eql(cmd_name, "call")) return raw.cmdCall(io, alloc, cli, fmt);
+    if (eql(cmd_name, "serve")) return http.serve(io, alloc, cli); // Accept-negotiated
 
     try printOut(io, alloc, "unknown command: ");
-    try printOut(io, alloc, cmd);
+    try printOut(io, alloc, cmd_name);
     try printOut(io, alloc, "\n\n");
-    try printOut(io, alloc, Usage);
+    try printOut(io, alloc, cli_mod.Usage);
     return 1;
 }
 
@@ -88,596 +81,4 @@ fn versionString() []const u8 {
             builtin.zig_version.patch,
         });
     }
-}
-
-fn cmdClasses(io: Io, alloc: Allocator, fmt: Format) !u8 {
-    const classes = try listBusyClasses(alloc);
-    defer {
-        for (classes) |c| alloc.free(c);
-        alloc.free(classes);
-    }
-    if (fmt == .xml) {
-        const t = try format.classesXml(alloc, classes);
-        defer alloc.free(t);
-        try printOut(io, alloc, t);
-        try printOut(io, alloc, "\n");
-        return 0;
-    }
-    var v = try alloc.alloc(json.Value, classes.len);
-    defer alloc.free(v);
-    for (classes, 0..) |c, i| v[i] = .{ .str = c };
-    var out: std.ArrayList(u8) = .empty;
-    defer out.deinit(alloc);
-    var w = json.Writer{ .buf = &out, .alloc = alloc };
-    try w.raw("{\"ok\":true,\"count\":");
-    {
-        var b: [16]u8 = undefined;
-        try w.raw(std.fmt.bufPrint(&b, "{d}", .{classes.len}) catch unreachable);
-    }
-    try w.raw(",\"classes\":[");
-    for (v, 0..) |*cv, i| {
-        if (i != 0) try w.raw(",");
-        try json.stringify(cv, &w);
-    }
-    try w.raw("]}");
-    try out.append(alloc, '\n');
-    try printOut(io, alloc, out.items);
-    return 0;
-}
-
-fn cmdSurface(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
-    const o = optsFrom(cli) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
-        const m = if (err == error.NoBusyProgId)
-            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, m);
-    };
-    var sess = busyc.Session.init(alloc) catch |err| {
-        var cb: [64]u8 = undefined;
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), @errorName(err));
-    };
-    defer sess.deinit();
-    sess.create(o.prog_id) catch |err| {
-        var cb: [64]u8 = undefined;
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
-    };
-    const filter = cli.get("--member");
-    if (fmt == .xml) {
-        const members = sess.surface(alloc) catch |err| {
-            var cb: [64]u8 = undefined;
-            const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-            return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
-        };
-        defer {
-            for (members) |*m| m.deinit(alloc);
-            alloc.free(members);
-        }
-        const t = format.surfaceXml(alloc, o.prog_id, members, filter) catch |err| {
-            var cb: [64]u8 = undefined;
-            return fail(io, alloc, fmt, helpers.errCode(err, &cb), @errorName(err));
-        };
-        defer alloc.free(t);
-        try printOut(io, alloc, t);
-        try printOut(io, alloc, "\n");
-        return 0;
-    }
-    const text = surfaceText(&sess, alloc, o.prog_id, filter) catch |err| {
-        var cb: [64]u8 = undefined;
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
-    };
-    defer alloc.free(text);
-    try printOut(io, alloc, text);
-    try printOut(io, alloc, "\n");
-    return 0;
-}
-
-fn cmdQuery(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
-    var owned_sql: ?[]u8 = null;
-    defer if (owned_sql) |o| alloc.free(o);
-    const sql: []const u8 = if (cli.get("--sql-b64")) |b| blk: {
-        owned_sql = b64Decode(alloc, b) catch {
-            return fail(io, alloc, fmt, "invalid_base64", "invalid --sql-b64 (not valid base64)");
-        };
-        break :blk owned_sql.?;
-    } else cli.get("--sql") orelse {
-        return fail(io, alloc, fmt, "bad_args", "missing required --sql (or --sql-b64)");
-    };
-    // Query guard (issue #3): parse flags + refuse BEFORE touching COM, so
-    // a refusal is instant and works even with BUSY not running.
-    const guard = cli_mod.guardFrom(cli, "full") catch |err| {
-        return fail(io, alloc, fmt, "bad_args", switch (err) {
-            error.BadQueryMode => "invalid --query-mode (use full, read-only, off)",
-            error.BadMaxRows => "invalid --max-rows (non-negative integer; 0 = unlimited)",
-        });
-    };
-    sqlguard.check(guard.mode, sql) catch {
-        return fail(io, alloc, fmt, "query_not_allowed", switch (guard.mode) {
-            .off => "query disabled by --query-mode off",
-            .read_only => "read-only mode accepts only a single SELECT/WITH statement (no multi-statement SQL)",
-            else => unreachable,
-        });
-    };
-    const o = optsFrom(cli) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
-        const m = if (err == error.NoBusyProgId)
-            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, m);
-    };
-    var sess = try busyc.Session.init(alloc);
-    defer sess.deinit();
-    var ok = true;
-    var out_text: []u8 = undefined;
-    blk: {
-        openSession(&sess, o) catch |err| {
-            var cb: [64]u8 = undefined;
-            const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-            out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);
-            ok = false;
-            break :blk;
-        };
-        const rows = sess.queryToJson(sql) catch |err| {
-            var cb: [64]u8 = undefined;
-            const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-            out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);
-            ok = false;
-            break :blk;
-        };
-        var rows_mut = rows;
-        defer rows_mut.deinit(alloc);
-        out_text = switch (fmt) {
-            .json => try envelope.rowsJson(alloc, &rows_mut, guard.max_rows),
-            .xml => blk2: {
-                // Legacy SC=1 rowset has no truncation marker — cap the
-                // rows via a shallow view, document JSON as the aware mode.
-                const view = envelope.rowView(&rows_mut, guard.max_rows);
-                break :blk2 try format.rowsXml(alloc, &view);
-            },
-        };
-    }
-    defer alloc.free(out_text);
-    try printOut(io, alloc, out_text);
-    try printOut(io, alloc, "\n");
-    return if (ok) 0 else 1;
-}
-
-/// `busy-bridge op ...` — ERP operations facade (issue #7): normalized
-/// reads with mechanical internals; raw `call`/`query` remain the escape
-/// hatch. Positionals: `catalog`, `list <accounts|items|vouchers>`,
-/// `get <account|item|voucher> <key>`; flags: --limit --q --type.
-fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
-    // positional words (skip flags + their values)
-    var pos: std.ArrayList([]const u8) = .empty;
-    defer pos.deinit(alloc);
-    {
-        var i: usize = 1;
-        while (i < cli.items.len) : (i += 1) {
-            const it = cli.items[i];
-            if (it.len >= 2 and it[0] == '-' and it[1] == '-') {
-                i += 1; // flag + value
-                continue;
-            }
-            try pos.append(alloc, it);
-        }
-    }
-    if (pos.items.len == 0)
-        return fail(io, alloc, fmt, "bad_args", "usage: busy-bridge op <catalog | list <accounts|items|vouchers> [--limit N] [--q X] [--type NAME] | get <account|item|voucher> <key> | create|update <account|item> <name> [--json {..}] | delete <account|item> <name> | post --json {..} | batch --json [..]>");
-
-    const verb = pos.items[0];
-    if (eql(verb, "catalog")) {
-        // plain text like version/help — docs generation reads it raw
-        const md = try ops.catalog.markdown(alloc);
-        defer alloc.free(md);
-        try printOut(io, alloc, md);
-        return 0;
-    }
-
-    // M2 writes (issue #7): create/update/delete/post/batch share the
-    // exec dispatcher (one JSON-args path for CLI, HTTP and batch).
-    if (eql(verb, "create") or eql(verb, "update") or eql(verb, "delete") or eql(verb, "post") or eql(verb, "batch"))
-        return cmdOpWrite(io, alloc, cli, fmt, pos.items, verb);
-
-    // M3 named reports (issue #7): balances + stock status.
-    if (eql(verb, "report")) return cmdOpReport(io, alloc, cli, fmt, pos.items);
-
-    const limit: usize = blk: {
-        const raw = cli.get("--limit") orelse break :blk 100;
-        break :blk std.fmt.parseInt(usize, raw, 10) catch {
-            return fail(io, alloc, fmt, "bad_args", "invalid --limit (non-negative integer; 0 = unlimited)");
-        };
-    };
-
-    // validate everything BEFORE touching COM
-    const OpKind = enum { list_accounts, list_items, list_vouchers, get_account, get_item, get_voucher };
-    var opk: OpKind = undefined;
-    var key: []const u8 = "";
-    var key_int: i64 = 0;
-    if (eql(verb, "list")) {
-        if (pos.items.len < 2)
-            return fail(io, alloc, fmt, "bad_args", "op list needs a kind: accounts | items | vouchers");
-        const k = pos.items[1];
-        if (eql(k, "accounts")) opk = .list_accounts else if (eql(k, "items")) opk = .list_items else if (eql(k, "vouchers")) opk = .list_vouchers else return fail(io, alloc, fmt, "bad_args", "unknown list kind (use accounts, items or vouchers)");
-    } else if (eql(verb, "get")) {
-        if (pos.items.len < 3)
-            return fail(io, alloc, fmt, "bad_args", "op get needs a kind and a key: account|item <name> | voucher <code>");
-        const k = pos.items[1];
-        key = pos.items[2];
-        if (eql(k, "account")) {
-            opk = .get_account;
-        } else if (eql(k, "item")) {
-            opk = .get_item;
-        } else if (eql(k, "voucher")) {
-            opk = .get_voucher;
-            key_int = std.fmt.parseInt(i64, key, 10) catch
-                return fail(io, alloc, fmt, "bad_args", "voucher key must be an integer VchCode");
-        } else {
-            return fail(io, alloc, fmt, "bad_args", "unknown get kind (use account, item or voucher)");
-        }
-    } else {
-        return fail(io, alloc, fmt, "bad_args", "unknown op verb (use catalog, list or get)");
-    }
-    const op_name: []const u8 = switch (opk) {
-        .list_accounts => "list-accounts",
-        .list_items => "list-items",
-        .list_vouchers => "list-vouchers",
-        .get_account => "get-account",
-        .get_item => "get-item",
-        .get_voucher => "get-voucher",
-    };
-
-    const o = optsFrom(cli) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
-        const m = if (err == error.NoBusyProgId)
-            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, m);
-    };
-    var sess = try busyc.Session.init(alloc);
-    defer sess.deinit();
-    openSession(&sess, o) catch |err| {
-        var cb: [64]u8 = undefined;
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
-    };
-
-    const result = switch (opk) {
-        .list_accounts => ops.masters.list(&sess, alloc, .account, .{ .limit = limit, .q = cli.get("--q") }),
-        .list_items => ops.masters.list(&sess, alloc, .item, .{ .limit = limit, .q = cli.get("--q") }),
-        .list_vouchers => ops.vouchers.list(&sess, alloc, .{ .type_name = cli.get("--type"), .limit = limit }),
-        .get_account => ops.masters.get(&sess, alloc, .account, key),
-        .get_item => ops.masters.get(&sess, alloc, .item, key),
-        .get_voucher => ops.vouchers.get(&sess, alloc, key_int),
-    } catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NotFound)
-            "not_found"
-        else if (err == error.BadArgs)
-            "bad_args"
-        else
-            helpers.errCode(err, &cb);
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, mach, msg);
-    };
-    var res = result;
-    defer res.deinit(alloc);
-
-    const out_text = switch (fmt) {
-        .json => try envelope.opJson(alloc, op_name, &res),
-        .xml => try envelope.opXml(alloc, op_name, &res),
-    };
-    defer alloc.free(out_text);
-    try printOut(io, alloc, out_text);
-    try printOut(io, alloc, "\n");
-    return 0;
-}
-
-/// M3 named reports: `op report <name> [--flags]`. Flags become the
-/// JSON args object — one validation path (reports.zig) for CLI + HTTP.
-fn cmdOpReport(io: Io, alloc: Allocator, cli: Cli, fmt: Format, pos: []const []const u8) !u8 {
-    if (pos.len < 2)
-        return fail(io, alloc, fmt, "bad_args", "op report needs a name: account-balance | group-balance | trial-balance | stock-status");
-    const report = pos[1];
-
-    var entries: std.ArrayList(json.Value.Entry) = .empty;
-    var args_owned = false;
-    var args: json.Value = .{ .null = {} };
-    defer if (args_owned) args.deinit(alloc);
-    const str_flags = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q" };
-    for (str_flags) |f| {
-        var flag_buf: [24]u8 = undefined;
-        const flag = std.fmt.bufPrint(&flag_buf, "--{s}", .{f}) catch continue;
-        if (cli.get(flag)) |v| try ops.common.put(alloc, &entries, f, .{ .str = try alloc.dupe(u8, v) });
-    }
-    if (cli.get("--limit")) |raw| {
-        const n = std.fmt.parseInt(i64, raw, 10) catch {
-            entries.deinit(alloc);
-            return fail(io, alloc, fmt, "bad_args", "invalid --limit (non-negative integer; 0 = unlimited)");
-        };
-        try ops.common.put(alloc, &entries, "limit", .{ .int = n });
-    }
-    args = try ops.common.objFrom(alloc, &entries);
-    args_owned = true;
-
-    const o = optsFrom(cli) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
-        const m = if (err == error.NoBusyProgId)
-            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, m);
-    };
-    var sess = try busyc.Session.init(alloc);
-    defer sess.deinit();
-    openSession(&sess, o) catch |err| {
-        var cb: [64]u8 = undefined;
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
-    };
-
-    const result = ops.reports.run(&sess, alloc, report, &args) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NotFound)
-            "not_found"
-        else if (err == error.BadArgs)
-            "bad_args"
-        else
-            helpers.errCode(err, &cb);
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, mach, msg);
-    };
-    var res = result;
-    defer res.deinit(alloc);
-
-    const out_text = switch (fmt) {
-        .json => try envelope.opJson(alloc, report, &res),
-        .xml => try envelope.opXml(alloc, report, &res),
-    };
-    defer alloc.free(out_text);
-    try printOut(io, alloc, out_text);
-    try printOut(io, alloc, "\n");
-    return 0;
-}
-
-/// M2 write verbs: create/update/delete/post/batch. Fields ride in
-/// `--json` / `--json-b64` (PowerShell-safe); the positional name is
-/// injected into the args object so the exec dispatcher sees one shape.
-fn cmdOpWrite(io: Io, alloc: Allocator, cli: Cli, fmt: Format, pos: []const []const u8, verb: []const u8) !u8 {
-    var owned_json: ?[]u8 = null;
-    defer if (owned_json) |o| alloc.free(o);
-    var json_text: ?[]const u8 = null;
-    if (cli.get("--json-b64")) |b| {
-        owned_json = b64Decode(alloc, b) catch {
-            return fail(io, alloc, fmt, "invalid_base64", "invalid --json-b64 (not valid base64)");
-        };
-        json_text = owned_json.?;
-    } else if (cli.get("--json")) |t| {
-        json_text = t;
-    }
-
-    var args: json.Value = .{ .obj = &.{} };
-    var args_owned = false;
-    defer if (args_owned) args.deinit(alloc);
-    var op_heap: ?[]u8 = null;
-    defer if (op_heap) |o| alloc.free(o);
-    var op_name: []const u8 = "";
-
-    if (eql(verb, "batch")) {
-        const t = json_text orelse
-            return fail(io, alloc, fmt, "bad_args", "op batch requires --json '[{\"op\":\"create-account\",\"args\":{...}}, ...]'");
-        args = json.parse(alloc, t) catch |err| {
-            var cb: [64]u8 = undefined;
-            return fail(io, alloc, fmt, helpers.errCode(err, &cb), @errorName(err));
-        };
-        args_owned = true;
-        if (args != .arr)
-            return fail(io, alloc, fmt, "bad_args", "batch --json must be a JSON array of entries");
-        op_name = "batch";
-    } else if (eql(verb, "post")) {
-        const t = json_text orelse
-            return fail(io, alloc, fmt, "bad_args", "op post requires --json '{\"type\":\"sale\",\"date\":\"YYYY-MM-DD\",...}' (or {\"type\":\"journal\",\"entries\":[...]})");
-        args = json.parse(alloc, t) catch |err| {
-            var cb: [64]u8 = undefined;
-            return fail(io, alloc, fmt, helpers.errCode(err, &cb), @errorName(err));
-        };
-        args_owned = true;
-        if (args != .obj)
-            return fail(io, alloc, fmt, "bad_args", "post --json must be a JSON object");
-        op_name = "post-voucher";
-    } else {
-        // delete voucher <code> — integer key, no JSON
-        if (eql(verb, "delete") and pos.len >= 3 and eql(pos[1], "voucher")) {
-            const code = std.fmt.parseInt(i64, pos[2], 10) catch
-                return fail(io, alloc, fmt, "bad_args", "voucher key must be an integer VchCode");
-            var ce: std.ArrayList(json.Value.Entry) = .empty;
-            try ops.common.put(alloc, &ce, "code", .{ .int = code });
-            args = try ops.common.objFrom(alloc, &ce);
-            args_owned = true;
-            op_heap = try alloc.dupe(u8, "delete-voucher");
-            op_name = op_heap.?;
-        } else {
-            // create|update|delete <account|item> <name> [--json {fields}]
-            if (pos.len < 3)
-                return fail(io, alloc, fmt, "bad_args", "op needs: <create|update|delete> <account|item|voucher> <name|code> [--json {\"parent\":\"...\"} (create/update)]");
-            const kind = pos[1];
-            const name = pos[2];
-            if (!(eql(kind, "account") or eql(kind, "item")))
-                return fail(io, alloc, fmt, "bad_args", "unknown kind (use account or item)");
-            const prefix: []const u8 = if (eql(verb, "create"))
-                "create-"
-            else if (eql(verb, "update"))
-                "update-"
-            else
-                "delete-";
-            op_heap = try std.fmt.allocPrint(alloc, "{s}{s}", .{ prefix, kind });
-            op_name = op_heap.?;
-            args_owned = true; // we always build the args object below
-
-            var fields: json.Value = .{ .obj = &.{} };
-            var fields_owned = false;
-            defer if (fields_owned) fields.deinit(alloc);
-            if (json_text) |t| {
-                fields = json.parse(alloc, t) catch |err| {
-                    var cb: [64]u8 = undefined;
-                    return fail(io, alloc, fmt, helpers.errCode(err, &cb), @errorName(err));
-                };
-                fields_owned = true;
-                if (fields != .obj)
-                    return fail(io, alloc, fmt, "bad_args", "--json must be a JSON object");
-            }
-            // inject the positional name (it wins over any "name" in --json)
-            var name_obj: json.Value = .{ .obj = &.{} };
-            defer if (name_obj == .obj and name_obj.obj.len > 0) name_obj.deinit(alloc);
-            {
-                var ne: std.ArrayList(json.Value.Entry) = .empty;
-                try ops.common.put(alloc, &ne, "name", .{ .str = try alloc.dupe(u8, name) });
-                name_obj = try ops.common.objFrom(alloc, &ne);
-            }
-            args = ops.common.mergeRoot(alloc, &fields, &name_obj) catch {
-                return fail(io, alloc, fmt, "bad_args", "--json fields must be a JSON object of string values");
-            };
-            args_owned = true;
-        }
-    }
-
-    const o = optsFrom(cli) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
-        const m = if (err == error.NoBusyProgId)
-            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, m);
-    };
-    var sess = try busyc.Session.init(alloc);
-    defer sess.deinit();
-    openSession(&sess, o) catch |err| {
-        var cb: [64]u8 = undefined;
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
-    };
-
-    const result = (if (eql(op_name, "batch"))
-        ops.batch.run(&sess, alloc, &args)
-    else
-        ops.exec.run(&sess, alloc, op_name, &args)) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NotFound)
-            "not_found"
-        else if (err == error.BadArgs)
-            "bad_args"
-        else
-            helpers.errCode(err, &cb);
-        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-        return fail(io, alloc, fmt, mach, msg);
-    };
-    var res = result;
-    defer res.deinit(alloc);
-
-    const out_text = switch (fmt) {
-        .json => try envelope.opJson(alloc, op_name, &res),
-        .xml => try envelope.opXml(alloc, op_name, &res),
-    };
-    defer alloc.free(out_text);
-    try printOut(io, alloc, out_text);
-    try printOut(io, alloc, "\n");
-    return 0; // args/op_heap freed by defers
-}
-
-fn cmdCall(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
-    const method = cli.get("--method") orelse {
-        return fail(io, alloc, fmt, "bad_args", "missing required --method");
-    };
-    var owned_args: ?[]u8 = null;
-    defer if (owned_args) |o| alloc.free(o);
-    const args_text: []const u8 = if (cli.get("--args-b64")) |b| blk: {
-        owned_args = b64Decode(alloc, b) catch {
-            return fail(io, alloc, fmt, "invalid_base64", "invalid --args-b64 (not valid base64)");
-        };
-        break :blk owned_args.?;
-    } else cli.getOr("--args", "[]");
-    const o = optsFrom(cli) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
-        const m = if (err == error.NoBusyProgId)
-            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, m);
-    };
-
-    var parsed = json.parse(alloc, args_text) catch |err| {
-        var cb: [64]u8 = undefined;
-        return fail(io, alloc, fmt, helpers.errCode(err, &cb), @errorName(err));
-    };
-    defer parsed.deinit(alloc);
-    if (parsed != .arr) {
-        return fail(io, alloc, fmt, "bad_args", "--args must be a JSON array");
-    }
-    // JSON-object XML arguments become real XML before the COM call.
-    format.xmlifyArgsInPlace(alloc, method, parsed.arr) catch |err| {
-        var cb: [64]u8 = undefined;
-        const mach = if (err == error.BadDocument) "xml_arg_invalid" else helpers.errCode(err, &cb);
-        const msg = if (err == error.BadDocument)
-            "xml argument must be a single-key document object like {\"Root\":{...}}"
-        else
-            @errorName(err);
-        return fail(io, alloc, fmt, mach, msg);
-    };
-
-    var sess = try busyc.Session.init(alloc);
-    defer sess.deinit();
-    var ok = true;
-    var out_text: []u8 = undefined;
-    blk: {
-        openSession(&sess, o) catch |err| {
-            var cb: [64]u8 = undefined;
-            const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-            out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);
-            ok = false;
-            break :blk;
-        };
-        const res = sess.invoke(method, parsed.arr) catch |err| {
-            var cb: [64]u8 = undefined;
-            const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
-            out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);
-            ok = false;
-            break :blk;
-        };
-        var res_mut = res;
-        defer res_mut.deinit(alloc);
-        if (fmt == .xml) {
-            out_text = if (format.isPassthrough(method, &res_mut))
-                try alloc.dupe(u8, res_mut.ret.str)
-            else
-                try format.callXml(alloc, method, &res_mut);
-            break :blk;
-        }
-        // JSON mode: xml-out results become structured trees, never blobs.
-        format.enrichCallResult(alloc, method, &res_mut) catch {};
-        // {"ok":true,"result":R,"outs":[...]}
-        var out: std.ArrayList(u8) = .empty;
-        var w = json.Writer{ .buf = &out, .alloc = alloc };
-        w.raw("{\"ok\":true,\"result\":") catch break :blk;
-        json.stringify(&res_mut.ret, &w) catch break :blk;
-        w.raw(",\"outs\":") catch break :blk;
-        var outs_v = json.Value{ .arr = res_mut.outs };
-        json.stringify(&outs_v, &w) catch break :blk;
-        w.raw("}") catch break :blk;
-        out_text = out.toOwnedSlice(alloc) catch break :blk;
-        ok = true;
-    }
-    defer alloc.free(out_text);
-    try printOut(io, alloc, out_text);
-    try printOut(io, alloc, "\n");
-    return if (ok) 0 else 1;
 }
