@@ -60,6 +60,18 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    // Replay suite (issue 009): host-native binary running only the
+    // host-agnostic replay tests — the entry root never touches COM, so
+    // it compiles and runs on Linux + Windows CI with no BUSY.
+    const replay_mod = b.createModule(.{
+        .root_source_file = b.path("src/replay.zig"),
+        .target = b.graph.host,
+    });
+    const replay_tests = b.addTest(.{ .root_module = replay_mod });
+    const run_replay = b.addRunArtifact(replay_tests);
+    const replay_step = b.step("replay-test", "Run host-agnostic replay tests");
+    replay_step.dependOn(&run_replay.step);
 }
 
 const VersionInfo = struct { version: []const u8, commit: []const u8 };

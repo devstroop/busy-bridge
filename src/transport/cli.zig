@@ -31,6 +31,8 @@ pub const Usage =
     \\       e.g. op get voucher 1290 --comp C / op list vouchers --type sale
     \\  busy-bridge call --method M [--args '[..]']    invoke any COM method, JSON args,
     \\       [--prog-id P] [--comp C]                   {"$byref": v} marks out-params
+    \\  busy-bridge record --comp C [--out F]          record golden reads as JSONL
+    \\       transcript for replay CI (needs BUSY; default F=transcript.jsonl)
     \\  busy-bridge serve [--port 9820] [--host H]     HTTP JSON API: GET /surface /classes
     \\       [--comp C] [--prog-id P]                   POST /query {"sql":..} /call {"method":..}
     \\       [--query-mode full|read-only|off]          guard (serve defaults to read-only)

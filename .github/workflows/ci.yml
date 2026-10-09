@@ -106,3 +106,57 @@ jobs:
           $c = & 'zig-out\bin\busy-bridge.exe' classes
           if ($LASTEXITCODE -ne 0) { throw 'classes smoke failed' }
           Write-Output ($c.Substring(0, [Math]::Min(160, $c.Length)))
+
+  # Replay suite (issue 009): host-native, no COM, no BUSY — the same
+  # transcript-driven tests run on both OSes. The exact-count gate runs
+  # on Windows (the test.exe name is shared with the main suite, so the
+  # two count scripts must never run concurrently).
+  replay-test:
+    name: replay (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://ziglang.org/download/index.json -o index.json
+          tarball=$(jq -r --arg v "$ZIG_VERSION" '.[$v]["x86_64-linux"].tarball' index.json)
+          shasum=$(jq -r --arg v "$ZIG_VERSION" '.[$v]["x86_64-linux"].shasum' index.json)
+          echo "fetching $tarball"
+          curl -fsSL "$tarball" -o zig.tar.xz
+          echo "$shasum  zig.tar.xz" | sha256sum -c -
+          mkdir -p "$HOME/.local/zig"
+          tar -xJf zig.tar.xz -C "$HOME/.local/zig" --strip-components=1
+          echo "$HOME/.local/zig" >> "$GITHUB_PATH"
+
+      - name: Install Zig (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $idx = Invoke-RestMethod https://ziglang.org/download/index.json
+          $e = $idx.$env:ZIG_VERSION.'x86_64-windows'
+          Write-Host "fetching $($e.tarball)"
+          Invoke-WebRequest -Uri $e.tarball -OutFile zig.zip
+          $hash = (Get-FileHash zig.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $e.shasum.ToLower()) { throw "checksum mismatch: got $hash want $($e.shasum)" }
+          $dest = Join-Path $env:RUNNER_TEMP 'zig'
+          Expand-Archive zig.zip -DestinationPath $dest
+          $extracted = (Get-ChildItem $dest -Directory | Select-Object -First 1).FullName
+          Add-Content $env:GITHUB_PATH $extracted
+
+      - name: Replay tests (host-native, no BUSY)
+        run: zig build replay-test
+
+      - name: Check replay count
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/check_replay.ps1

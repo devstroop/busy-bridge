@@ -72,4 +72,5 @@ test "test aggregation for the build test root" {
     _ = @import("format/wire.zig"); // issue #11 phase 3 split suites
     _ = @import("format/call.zig");
     _ = @import("format/xml_envelopes.zig");
+    _ = @import("../core/com/replay/tests.zig"); // issue #9 replay suites (host-agnostic)
 }

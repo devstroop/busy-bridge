@@ -397,11 +397,13 @@ every `@import` against the layer rules (`util→util`, `core→+core`,
 ```powershell
 zig build            # build x86-windows-gnu (32-bit: BUSY COM is 32-bit only)
 zig build test       # unit tests (XML codec fidelity, negotiation, envelopes, xmlify)
+zig build replay-test  # host-native replay suites (no BUSY needed — runs on Linux/macOS too)
 zig fmt --check .    # formatting
 powershell scripts/check_layers.ps1   # layer boundaries
 powershell scripts/check_size.ps1     # structure gate: src ≤400, tests ≤200 lines
                                       #   (-ReportOnly to preview; enforcement default)
-powershell scripts/check_tests.ps1    # test-discovery gate: exact count (73)
+powershell scripts/check_tests.ps1    # test-discovery gate: exact count (82)
+powershell scripts/check_replay.ps1   # replay gate: exact count (29, Windows)
 ```
 
 **Structure gates** (both enforced): `check_layers.ps1` (dependency
@@ -413,7 +415,8 @@ documented allowlist entry with a written reason).
 order, how to add a command/op/route): [`docs/architecture.md`](docs/architecture.md).
 
 CI (GitHub Actions, ubuntu + windows): fmt → layer check → build → unit
-tests (Windows runner; test binary is x86-windows).
+tests (Windows runner; test binary is x86-windows) → replay tests
+(host-native on both OSes, no BUSY).
 
 Live-BUSY tests (require BUSY + a company; **not** runnable in CI):
 

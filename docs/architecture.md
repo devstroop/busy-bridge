@@ -76,8 +76,15 @@ barrel back for shared types — Zig resolves the lazy cycle (this is how
 `zig build test` roots at `src/main.zig`; tests only run for files pulled
 in from a **test block**. Two aggregation blocks cover the tree:
 
-- `transport/format.zig` → `test "test aggregation for the build test root"` — util, core, envelope, auth, sessions, v1, format children
+- `transport/format.zig` → `test "test aggregation for the build test root"` — util, core, envelope, auth, sessions, v1, format children, replay suites (issue 009)
 - `core/ops.zig` → `test "test aggregation for ops children"` — every `ops/*` module
+
+A second binary, `zig build replay-test`, roots at `src/replay.zig` and
+runs only the host-agnostic suites (replay entry + replay + the pure
+json/xml suites it imports) — no COM module is ever analyzed there,
+because `callconv(.winapi)` externs do not compile on arm64 hosts. Counts:
+82 in the Windows binary (`scripts/check_tests.ps1`), 29 in the replay
+binary (`scripts/check_replay.ps1`); both assert EXACT numbers.
 
 **Any new file with tests must be referenced from one of these blocks**
 or its tests silently never run (this bug hid 26 tests for months —

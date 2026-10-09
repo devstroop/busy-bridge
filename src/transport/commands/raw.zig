@@ -8,6 +8,7 @@ const helpers = @import("../../util/helpers.zig");
 const sqlguard = @import("../../util/sqlguard.zig");
 const cli_mod = @import("../cli.zig");
 const ops = @import("../../core/ops.zig");
+const record = @import("../../core/com/record.zig");
 const registry = @import("../../core/registry.zig");
 const envelope = @import("../envelope.zig");
 const format = @import("../format.zig");
@@ -273,4 +274,53 @@ pub fn cmdCall(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     try printOut(io, alloc, out_text);
     try printOut(io, alloc, "\n");
     return if (ok) 0 else 1;
+}
+
+/// Record read-only golden flows as a JSONL transcript for replay CI
+/// (issue 009). Plain-text output like version/help. Fails when BUSY is
+/// absent (busy_not_found) or the company will not open; a partial
+/// transcript is still written on mid-run failure.
+pub fn cmdRecord(io: Io, alloc: Allocator, cli: Cli) !u8 {
+    const comp = cli.get("--comp") orelse
+        return fail(io, alloc, .json, "bad_args", "record needs --comp CODE");
+    const out_path = cli.getOr("--out", "transcript.jsonl");
+    const o = optsFrom(cli) catch |err| {
+        var cb: [64]u8 = undefined;
+        const mach = if (err == error.NoBusyProgId) "busy_not_found" else helpers.errCode(err, &cb);
+        const m = if (err == error.NoBusyProgId)
+            "no registered Busy2L*.CFixedInterface found - is BUSY installed? (or pass --prog-id)"
+        else
+            @errorName(err);
+        return fail(io, alloc, .json, mach, m);
+    };
+    var sess = busyc.Session.init(alloc) catch |err| {
+        var cb: [64]u8 = undefined;
+        return fail(io, alloc, .json, helpers.errCode(err, &cb), @errorName(err));
+    };
+    defer sess.deinit();
+    sess.create(o.prog_id) catch |err| {
+        var cb: [64]u8 = undefined;
+        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+        return fail(io, alloc, .json, helpers.errCode(err, &cb), msg);
+    };
+    var rec = record.Recorder{ .sess = &sess, .alloc = alloc };
+    defer rec.deinit();
+    const now_ms = Io.Timestamp.now(io, .real).toMilliseconds();
+    rec.header(o.prog_id, now_ms) catch |err| {
+        var cb: [64]u8 = undefined;
+        return fail(io, alloc, .json, helpers.errCode(err, &cb), @errorName(err));
+    };
+    record.runGoldenReads(&sess, alloc, &rec, o.busy, o.data, comp) catch |err| {
+        rec.writeFile(io, out_path) catch {};
+        var cb: [64]u8 = undefined;
+        const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+        return fail(io, alloc, .json, helpers.errCode(err, &cb), msg);
+    };
+    rec.writeFile(io, out_path) catch |err| {
+        var cb: [64]u8 = undefined;
+        return fail(io, alloc, .json, helpers.errCode(err, &cb), @errorName(err));
+    };
+    var b: [128]u8 = undefined;
+    try printOut(io, alloc, std.fmt.bufPrint(&b, "recorded {d} entries -> {s}\n", .{ rec.seq, out_path }) catch unreachable);
+    return 0;
 }

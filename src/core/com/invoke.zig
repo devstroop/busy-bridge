@@ -39,16 +39,7 @@ const VT_BYREF = win32.VT_BYREF;
 const toUtf16 = utf16.toUtf16;
 const fromUtf16 = utf16.fromUtf16;
 
-pub const CallResult = struct {
-    ret: json.Value,
-    outs: []json.Value,
-
-    pub fn deinit(self: *CallResult, alloc: Allocator) void {
-        self.ret.deinit(alloc);
-        for (self.outs) |*o| o.deinit(alloc);
-        alloc.free(self.outs);
-    }
-};
+pub const CallResult = @import("result.zig").CallResult;
 
 /// Invoke method by name. JSON args are mapped to Variant params.
 /// Markers (issue #7 M3 — services-class params are TYPED, not Variant):

@@ -6,6 +6,6 @@ const std = @import("std");
 pub const Allocator = std.mem.Allocator;
 pub const Session = @import("com/session.zig").Session;
 pub const Member = @import("com/surface.zig").Member;
-pub const CallResult = @import("com/invoke.zig").CallResult;
+pub const CallResult = @import("com/result.zig").CallResult;
 pub const win32 = @import("com/win32.zig");
 pub const utf16 = @import("com/utf16.zig");

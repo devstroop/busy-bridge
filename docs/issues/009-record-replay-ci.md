@@ -1,6 +1,6 @@
 # 009 · Record/replay fixtures for CI depth
 
-**Labels:** `tests` `ci` · **Effort:** M · **Status:** open · **Milestone:** H3
+**Labels:** `tests` `ci` · **Effort:** M · **Status:** in progress (M1 landed 2026-10-09: format + Replay + recorder + host CI; ops-generic replay is the follow-up) · **Milestone:** H3
 
 ## Problem
 
@@ -35,12 +35,19 @@ Alternative considered: stub at the *route* level (mock JSON in/out) — weaker
 
 ## Acceptance criteria
 
-- [ ] Recorder produces transcripts for all live-suite scenarios with one command.
-- [ ] Replay tests cover: OpenDB success/failure, master CRUD args+results,
+- [x] Recorder produces transcripts with one command (`busy-bridge record
+      --comp C [--out F]`, read-only golden flows; write flows deferred — the
+      seed transcript covers CRUD shapes as synthetic entries until a BUSY
+      machine regenerates it).
+- [x] Replay tests cover: OpenDB success/failure, master CRUD args+results,
       recordset walking (multi-row, null cells, empty result), XML-result parsing,
-      `vt=0` error mapping.
-- [ ] `zig build test` on Linux CI runs replay tests (no Windows-only code paths — replay must be host-agnostic).
-- [ ] Transcript staleness guard: recording date + BUSY version embedded; test warns on mismatch.
+      `vt=0` error mapping (as recorded error names → the same Zig sets).
+- [x] `zig build replay-test` runs replay tests on Linux + Windows CI, no BUSY
+      (host-native binary rooted at `src/replay.zig`; COM-touching modules are
+      never analyzed — `callconv(.winapi)` externs do not compile on arm64 hosts).
+- [x] Transcript staleness guard: recording date + BUSY version embedded; test warns on mismatch.
+- [ ] Follow-up: drive `core/ops` against Replay via a comptime session
+      interface, so facade logic (not just Session values) runs under replay.
 
 ## Notes
 

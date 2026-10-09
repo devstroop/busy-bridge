@@ -1,6 +1,7 @@
 //! CLI dispatch (issue #11 phase 4): route a parsed argv to its command.
 //! Split into responsibility-named submodules:
-//!   commands/raw.zig  classes, surface, query, call — COM escape hatch
+//!   commands/raw.zig  classes, surface, query, call, record — COM escape
+//!                     hatch + transcript recorder (issue #9)
 //!   commands/ops.zig  op verb dispatch — ERP facade (issue #7)
 //! This file keeps the dispatcher + shared fail helpers, so the error
 //! envelope is defined exactly once for every CLI failure path.
@@ -64,6 +65,7 @@ pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
     if (eql(cmd_name, "query")) return raw.cmdQuery(io, alloc, cli, fmt);
     if (eql(cmd_name, "op")) return ops_cmd.cmdOp(io, alloc, cli, fmt); // ERP facade (issue #7)
     if (eql(cmd_name, "call")) return raw.cmdCall(io, alloc, cli, fmt);
+    if (eql(cmd_name, "record")) return raw.cmdRecord(io, alloc, cli); // JSONL transcript (issue #9)
     if (eql(cmd_name, "serve")) return http.serve(io, alloc, cli); // Accept-negotiated
 
     try printOut(io, alloc, "unknown command: ");
