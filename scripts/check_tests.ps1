@@ -20,7 +20,8 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 # + src/handlers.zig aggregation + per-file tests). Includes the 9 replay
 # suites (issue 009) aggregated via format.zig; the 2 replay entry blocks
 # live only in the host replay binary (see check_replay.ps1, expects 29).
-$Expected = 82
+# History: 82 (iteration-4) -> 83 (+byrefKindFromMarker, typed ByRef).
+$Expected = 83
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)

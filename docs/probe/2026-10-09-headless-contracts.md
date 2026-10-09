@@ -151,4 +151,43 @@ Remaining iteration-5 items: typed-ByRef shape verification (post-fix),
 `GetCollectionObj` chaining idea for `_Collection` args, `ShowMsg`
 arg-count correction, `SaveVchFromJson` matrix (post-ByRef).
 
+## 5. Iteration 5 — typed-ByRef lands; VUP proven mobile-gated (2026-10-10)
+
+**Bridge fix shipped** (`core/com/invoke`): `$byref` markers extended
+with `bstr` / `bool` / `dispatch` (VB6-style typed ByRef —
+`VT_BSTR|BYREF`, `VT_BOOL|BYREF`, `VT_DISPATCH|BYREF` boxes with proper
+read-back: BSTR freed, dispatch Released exactly once, failure-path
+cleanup). 83/83 unit tests, all gates green.
+
+**The login blocker moved from *our* marshaling to *BUSY's* feature
+gate.** All five `ValidUserNamePasswrdForParty` probes now invoke
+cleanly — and every one returns:
+
+```
+false, outs: ["<dispatch>", "Mobile App feature is not enabled in BUSY company."]
+```
+
+`ValidUserNamePasswrdForParty` is BUSY's **mobile-app login validator**
+— gated behind the mobile/BDEP feature the operator deliberately does
+not enable. The operator's BDEP instinct is hereby **proven by BUSY's
+own error string**; VUP is out of the login path. Same pattern on
+`ChkMobileUserRightsForReports` ("Mobile User don't have rights to view
+this report"). `CheckUserRightsForReports` is callable but its
+semantics are unconfirmed (repID=0 guess → false, empty err).
+
+**Regular-user login candidates for iteration 6:**
+1. `GetUserList` / `GetUserProfile` (`BusyExt21.COtherServices`) —
+   user enumeration + profile; may expose the user-table shape.
+2. Common-DB SQL: `GetRecordsetFromCompanyDB` /
+   `ExecuteQueryInADOForSQL` / `ExecuteQueryInDB` (on
+   `CFixedInterface`) — the `UserControl` table (archive common-tables
+   list) is the likely regular-user store; password format unknown.
+3. `IsCSLoginExists` / `CheckCSUserPwd` (`COtherServices`) — *probably*
+   cloud-sync again; probe to exclude.
+
+Still blocked (next iterations): `GetJSON2*`/`SaveVchFromJson`
+(0x80020005 persists — remaining non-ByRef param shapes), day-book/
+ledger (collection INPUT args), `ShowMsg` (arg count).
+
+
 
