@@ -9,6 +9,7 @@
 //! user gets {"all":true}, everyone else deny-all {} (contract §3).
 const std = @import("std");
 const json = @import("../../util/json.zig");
+const busyc = @import("../../core/com.zig");
 const ops = @import("../../handlers.zig");
 const format = @import("../format.zig");
 const envelope = @import("../envelope.zig");
@@ -67,17 +68,22 @@ fn helpers_err(err: anyerror) []const u8 {
     };
 }
 
+/// BUSY-backed normalized rights (contract §3; BUSY-012): resolution
+/// runs through `CheckUserRightsForReports` per repID (probe-verified
+/// iteration 7). Fail-closed: any resolution failure yields deny-all,
+/// never a login failure.
+fn resolvedRights(alloc: Allocator, sess: *busyc.Session, user: []const u8, is_super: bool) json.Value {
+    return ops.rights.resolve(sess, alloc, user, is_super) catch |err| {
+        sess.setErr("rights resolution failed - deny-all fallback: {s}", .{@errorName(err)});
+        return ops.rights.denyAll(alloc) catch unreachable;
+    };
+}
+
 /// BUSY usernames are case-insensitive (live-verified: the fixture user
 /// is `admin`, the BUSY UI shows `Admin`) — the provisional super-user
 /// rights check must match the same way.
 pub fn isSuperUser(user: []const u8, super_user: []const u8) bool {
     return std.ascii.eqlIgnoreCase(user, super_user);
-}
-
-fn rightsOf(alloc: Allocator, is_super: bool) !json.Value {
-    var e: std.ArrayList(json.Value.Entry) = .empty;
-    if (is_super) try ops.common.put(alloc, &e, "all", .{ .bool = true });
-    return ops.common.objFrom(alloc, &e); // {} = deny-all provisional
 }
 
 fn login(ctx: ConnCtx, ralloc: Allocator, fmt: Format, body: []const u8) Route {
@@ -133,7 +139,8 @@ fn login(ctx: ConnCtx, ralloc: Allocator, fmt: Format, body: []const u8) Route {
         return deny(ralloc, fmt, "500 Internal Server Error", "internal", @errorName(err));
     };
     const is_super = isSuperUser(username.str, ctx.super_user);
-    return loginResult(ralloc, fmt, token, username.str, comp.str, fy, is_super, config) catch |err| {
+    const rights = resolvedRights(ralloc, ctx.sess, username.str, is_super);
+    return loginResult(ralloc, fmt, token, username.str, comp.str, fy, rights, config) catch |err| {
         return deny(ralloc, fmt, "500 Internal Server Error", "internal", @errorName(err));
     };
 }
@@ -147,7 +154,7 @@ fn me(ctx: ConnCtx, ralloc: Allocator, fmt: Format) !Route {
     try ops.common.put(ralloc, &ee, "is_mobile_user", .{ .bool = false });
     try ops.common.put(ralloc, &ee, "company", .{ .str = try ralloc.dupe(u8, e.company) });
     try ops.common.put(ralloc, &ee, "fy", .{ .int = e.fy });
-    try ops.common.put(ralloc, &ee, "rights", try rightsOf(ralloc, is_super));
+    try ops.common.put(ralloc, &ee, "rights", resolvedRights(ralloc, ctx.sess, e.user, is_super));
     const result = try ops.common.objFrom(ralloc, &ee);
     return .{ .status = "200 OK", .content_type = sh.ctOf(fmt), .payload = try envelope.okWrap(ralloc, "result", &result) };
 }
@@ -159,7 +166,7 @@ fn loginResult(
     user: []const u8,
     company: []const u8,
     fy: i64,
-    is_super: bool,
+    rights: json.Value,
     config: json.Value,
 ) !Route {
     var e: std.ArrayList(json.Value.Entry) = .empty;
@@ -169,7 +176,7 @@ fn loginResult(
     try ops.common.put(alloc, &e, "company", .{ .str = try alloc.dupe(u8, company) });
     try ops.common.put(alloc, &e, "fy", .{ .int = fy });
     try ops.common.put(alloc, &e, "config", config);
-    try ops.common.put(alloc, &e, "rights", try rightsOf(alloc, is_super));
+    try ops.common.put(alloc, &e, "rights", rights);
     const result = try ops.common.objFrom(alloc, &e);
     return .{ .status = "200 OK", .content_type = sh.ctOf(fmt), .payload = try envelope.okWrap(alloc, "result", &result) };
 }

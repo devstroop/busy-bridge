@@ -189,6 +189,52 @@ Still blocked (next iterations): `GetJSON2*`/`SaveVchFromJson`
 (0x80020005 persists — remaining non-ByRef param shapes), day-book/
 ledger (collection INPUT args), `ShowMsg` (arg count).
 
+## 7. Iteration 7 — per-user report rights SEMANTICS pinned (2026-10-10)
+
+BUSY-012's candidate primitive, **`CheckUserRightsForReports`
+(`COtherServices1`) — VERIFIED** with the archived signature
+(`docs/function-reference.md`): `(p_UserName, p_RepID, p_BranchCode,
+p_VchSeriesGrpCode, p_masterSeriesGrpCode, p_MastName, p_ErrStr)` —
+7 params, `p_ErrStr` typed-ByRef `bstr`. 42 probes (35 sweep + 7
+targeted) against live COMP0001:
+
+| Matrix | Result |
+|---|---|
+| admin × repID 0–15, 19, 21, 201 | **true**, empty errStr (super answered unconditionally — no row check observed) |
+| user1 × repID 0–15 | **false** |
+| user1 × 19 (Account Ledger), 201 (Bills Rec/Pay) | **true** — real per-report discrimination |
+| admin × 99999 | invoke REFUSED `0x8002000a` (DISP_E_OVERFLOW) — `p_RepID` is VB6 Integer (max 32767); a type-range artifact, not semantic validation. In-range semantic validity otherwise unconfirmed |
+
+Report-ID anchors from the archived function doc (`BUSY Functions.md`):
+Account Ledger = 19, Account Register = 21, Bills Rec/Pay = 201 —
+the repID space is **sparse**, not contiguous. The bridge's rights
+sweep covers 0–15 (live) + {19, 21, 201} (documented).
+
+Also in this iteration:
+- `GetVchTypesForUserRights` (`COtherServices1`, 0 params) →
+  `<dispatch>` Collection — the voucher-type rights key space,
+  blocked on Collection enumeration (same gap as day-book/ledger).
+- `GetRightsMsg` (`COtherServices`) → `" do not have the rights "`
+  (BUSY's own fragment — useful for client-facing messages).
+- `ChkUserRightsForGSTConfiguration` → `true` (0 params; context
+  ambiguous headless — no per-user discrimination observed; unused).
+- Common/FY DB table sweep for rights stores: `UserRights`, `Rights`,
+  `RightsControl`, … — **none exist**; the archived "Database
+  Structure" common tables (Tran10/Config/RepOptValue/ExternalData/
+  Locks) carry no per-user rights either. BUSY's per-user rights are
+  **COM-only** — `CheckUserRightsForReports` is the access path.
+
+**Shipped on the finding** (`handlers/rights.zig`): login + `/auth/me`
+now resolve normalized rights (contract §3) through
+`CheckUserRightsForReports` — super user short-circuits to full;
+regular users get one call per repID, fail-closed per report; any
+resolution failure falls back to deny-all. Live-verified: admin
+19/19 reports true; user1 `[19, 201]` true, 0–15 false — identical on
+`/me`. Remaining gaps (documented, deny-by-default):
+`voucher_types` (Collection enumeration) and the report
+**name** ↔ repID map for `/op/report/*` enforcement (identify via a
+GUI grant to user1 + re-sweep: the flipped ID is the report).
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user
