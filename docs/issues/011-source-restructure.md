@@ -51,9 +51,12 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       + `masters/write.zig` (278: fieldsToDoc/docToXml/saveMaster/create/
       update/delete + tests). Dead `groupTypeCode` (zero references) removed.
       Test count unchanged: 43/43.
-- [ ] **Phase 1b — vouchers**: `vouchers.zig` → barrel (~40) +
-      `vouchers/read.zig` (~250) + `vouchers/write.zig` (~330 incl. the
-      3 doc-builder tests).
+- [x] **Phase 1b — vouchers**: `vouchers.zig` → barrel (49: ListOpts,
+      re-exports) + `vouchers/read.zig` (245: list, get) +
+      `vouchers/write.zig` (379: buildSale/Journal, post, saveVch,
+      postResult, delete + both doc-builder tests). Test count green.
+      *Note: landed together with the test-discovery fix (b7d51d0) —
+      26 tests had never run before that commit.*
 - [ ] **Phase 2 — common**: → `common/value.zig` (~150, put/objFrom/merge/dup/
       stringify) + `common/sql.zig` (~120, resolveNames/codeByName) +
       `common/dates.zig` (~60) + `common/cursor.zig` (~50). One commit —
