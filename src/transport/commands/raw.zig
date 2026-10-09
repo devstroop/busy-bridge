@@ -252,7 +252,8 @@ pub fn cmdCall(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             ok = false;
             break :blk;
         };
-        const res = sess.invoke(method, parsed.arr) catch |err| {
+        const enum_ret = cli.flag("--enumerate-ret");
+        const res = sess.invokeEx(method, parsed.arr, .{ .enumerate_ret = enum_ret }) catch |err| {
             var cb: [64]u8 = undefined;
             const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
             out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);

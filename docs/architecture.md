@@ -35,6 +35,8 @@ src/
 │   └── golden.zig    golden-read flow script for `busy-bridge record` (issue 009)
 ├── core/                 BUSY domain — never imports transport
 │   ├── com.zig + com/    raw IDispatch FFI: Session, invoke, recordset, surface
+│   │   ├── marshal.zig     VARIANT <-> JSON mapping (split from invoke)
+│   │   └── collection.zig  VB6 Collection -> JSON array (Count/Item walk)
 │   ├── constants.zig     master/voucher code tables (machine-readable)
 │   ├── registry.zig      Win32 registry: newest Busy2L*.CFixedInterface
 │   └── xmlmeta.zig       which methods carry XML docs (Get=out, Save=in)

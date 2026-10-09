@@ -170,6 +170,12 @@ pub const Session = struct {
         return invoke_mod.invoke(self, method, args);
     }
 
+    /// Invoke with options (e.g. enumerate_ret: VT_DISPATCH return ->
+    /// JSON array via the VB6 Collection contract).
+    pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, opts: invoke_mod.InvokeOpts) !invoke_mod.CallResult {
+        return invoke_mod.invokeEx(self, method, args, opts);
+    }
+
     pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {
         return @import("recordset.zig").queryToJson(self, sql);
     }

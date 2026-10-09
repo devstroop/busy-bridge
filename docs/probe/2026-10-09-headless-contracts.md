@@ -235,6 +235,20 @@ resolution failure falls back to deny-all. Live-verified: admin
 **name** ↔ repID map for `/op/report/*` enforcement (identify via a
 GUI grant to user1 + re-sweep: the flipped ID is the report).
 
+**Collection read-back landed on the same day** (`core/com/collection.zig`):
+the VB6 Collection contract (`Count` + 1-based `Item`, direct
+`IDispatch::Invoke(DISPATCH_PROPERTYGET)` — no IEnumVARIANT QI) is
+walked into a JSON array via the new `{"$byref":"collection"}` out
+marker and `--enumerate-ret` (CLI) / `?enumerate_ret=1` (HTTP `/call`)
+for `VT_DISPATCH` return values; enumeration failure fails closed to
+`[]`, release exactly once. Live-verified A/B:
+`GetVchTypesForUserRights` → **`[9, 2, 3, 10, 11, 4, 5]`** (the
+voucher-type rights key space, BUSY type codes) vs `"<dispatch>"`
+without the flag; `GetUserList(true)` → **`["Admin", "User1"]`**.
+The voucher-type RIGHTS stay `{}` — BUSY exposes no per-user,
+per-voucher-type primitive (reports-only); the discovered key space
+is recorded for the day one exists.
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user

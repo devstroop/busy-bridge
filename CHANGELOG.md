@@ -6,6 +6,13 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- Collection read marshaling (`core/com/collection.zig`): VB6
+  Collection contract (`Count` + 1-based `Item`) enumerated into JSON
+  arrays — new `{"$byref":"collection"}` out marker + `--enumerate-ret`
+  (CLI) / `?enumerate_ret=1` (HTTP `/call`) for VT_DISPATCH returns;
+  fails closed to `[]`, Release exactly once. Live: `GetUserList(true)`
+  → `["Admin","User1"]`, `GetVchTypesForUserRights` → `[9,2,3,10,11,4,5]`
+  (voucher-type rights key space; vs `"<dispatch>"` without the flag).
 - BUSY-012 per-user rights: `CheckUserRightsForReports` semantics
   probe-verified (super answered unconditionally true; regular users
   discriminate per repID — user1: 19/201 allowed, 0–15 denied;

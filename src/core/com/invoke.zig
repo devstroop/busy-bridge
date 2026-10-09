@@ -6,6 +6,8 @@ const helpers = @import("../../util/helpers.zig");
 const Session = @import("session.zig").Session;
 const win32 = @import("win32.zig");
 const utf16 = @import("utf16.zig");
+const collection = @import("collection.zig");
+const marshal = @import("marshal.zig");
 
 const Allocator = std.mem.Allocator;
 const VARIANT = win32.VARIANT;
@@ -43,7 +45,7 @@ const fromUtf16 = utf16.fromUtf16;
 pub const CallResult = @import("result.zig").CallResult;
 
 /// $byref box kinds (issue #7 M3 + iteration-5 typed VB6 ByRef).
-pub const ByrefKind = enum { variant, f8, i4, cy, i8, bstr, bool, dispatch };
+pub const ByrefKind = enum { variant, f8, i4, cy, i8, bstr, bool, dispatch, collection };
 
 /// Pure marker parsing (unit-tested): $byref string -> box kind.
 pub fn byrefKindFromMarker(s: []const u8) ?ByrefKind {
@@ -55,7 +57,17 @@ pub fn byrefKindFromMarker(s: []const u8) ?ByrefKind {
     if (std.mem.eql(u8, s, "bstr")) return .bstr;
     if (std.mem.eql(u8, s, "bool")) return .bool;
     if (std.mem.eql(u8, s, "dispatch")) return .dispatch;
+    if (std.mem.eql(u8, s, "collection")) return .collection;
     return null;
+}
+
+/// Invoke options (collection read-back): `enumerate_ret` walks a
+/// VT_DISPATCH return value through the VB6 Collection contract
+/// (core/com/collection.zig) instead of surfacing "<dispatch>".
+pub const InvokeOpts = struct { enumerate_ret: bool = false };
+
+pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
+    return self.invokeEx(method, args, .{});
 }
 
 /// Invoke method by name. JSON args are mapped to Variant params.
@@ -71,7 +83,7 @@ pub fn byrefKindFromMarker(s: []const u8) ?ByrefKind {
 /// Typed/Variant post-call values are returned in `outs`. Typed box
 /// read-back: bstr -> string ("" when the callee wrote none; the BSTR
 /// is freed), bool -> boolean, dispatch -> "<dispatch>" (released) or "".
-pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
+pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, opts: InvokeOpts) !CallResult {
     const d = self.disp orelse return error.NoDispatch;
     var wname: [256]u16 = undefined;
     _ = try self.toWideFixed(method, &wname);
@@ -194,10 +206,10 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                             storage[i].data.byref = &boolbox[i];
                             byref_kind[i] = .bool;
                         },
-                        .dispatch => {
+                        .dispatch, .collection => {
                             storage[i].vt = VT_BYREF | VT_DISPATCH;
                             storage[i].data.byref = @ptrCast(&dispbox[i]);
-                            byref_kind[i] = .dispatch;
+                            byref_kind[i] = kind;
                         },
                     }
                     is_byref[i] = true;
@@ -249,7 +261,21 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
         return error.InvokeFailed;
     }
 
-    const ret = try valueFromVariant(self, &result);
+    var ret: json.Value = undefined;
+    if (opts.enumerate_ret and result.vt == VT_DISPATCH) {
+        // Collection-as-return (GetUserList / GetVchTypesForUserRights
+        // shape): enumerate via the VB6 Collection contract; the
+        // VariantClear below Releases the dispatch exactly once.
+        // Enumeration failure fails CLOSED ([]), the call succeeded.
+        if (result.data.pdispVal) |pv| {
+            const rd: *win32.IDispatch = @ptrCast(@alignCast(pv));
+            ret = collection.toJson(self, self.alloc, rd) catch json.Value{ .arr = &.{} };
+        } else {
+            ret = json.Value{ .arr = &.{} };
+        }
+    } else {
+        ret = try valueFromVariant(self, &result);
+    }
     _ = VariantClear(&result);
 
     var outs: std.ArrayList(json.Value) = .empty;
@@ -287,6 +313,18 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                     dispbox[i] = null;
                     break :blk json.Value{ .str = try self.alloc.dupe(u8, "<dispatch>") };
                 },
+                .collection => blk: {
+                    // VB6 Collection contract (Count + 1-based Item):
+                    // enumerate into a JSON array, then Release exactly
+                    // once. Enumeration failure fails CLOSED (empty
+                    // array) - the call itself succeeded.
+                    const p = dispbox[i] orelse break :blk json.Value{ .arr = &.{} };
+                    defer {
+                        _ = p.vtbl.Release(p);
+                        dispbox[i] = null;
+                    }
+                    break :blk collection.toJson(self, self.alloc, p) catch json.Value{ .arr = &.{} };
+                },
             };
             try outs.append(self.alloc, v);
         } else {
@@ -296,80 +334,10 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     return .{ .ret = ret, .outs = try outs.toOwnedSlice(self.alloc) };
 }
 
-pub fn variantFromValue(self: *Session, v: *const json.Value, out: *VARIANT) !void {
-    out.* = VARIANT.init();
-    switch (v.*) {
-        .null => {
-            out.vt = VT_NULL;
-        },
-        .bool => |b| {
-            out.vt = VT_BOOL;
-            out.data.boolVal = if (b) -1 else 0;
-        },
-        .int => |i| {
-            if (i >= std.math.minInt(i32) and i <= std.math.maxInt(i32)) {
-                out.vt = VT_I4;
-                out.data.lVal = @intCast(i);
-            } else {
-                out.vt = VT_I8;
-                out.data.llVal = i;
-            }
-        },
-        .float => |f| {
-            out.vt = VT_R8;
-            out.data.dblVal = f;
-        },
-        .str => |s| {
-            const wide = toUtf16(self.alloc, s) catch return error.OutOfMemory;
-            defer self.alloc.free(wide);
-            out.vt = VT_BSTR;
-            out.data.bstrVal = SysAllocString(wide.ptr);
-        },
-        .arr, .obj => return error.UnsupportedArgType,
-    }
-}
-
-pub fn valueFromVariant(self: *Session, vv: *const VARIANT) !json.Value {
-    const vt = vv.vt & ~@as(u16, VT_BYREF);
-    if (vv.vt & VT_BYREF != 0) {
-        // only VT_BYREF|VT_VARIANT handled by caller; others: best effort
-        if (vt == VT_VARIANT) {
-            const inner: *const VARIANT = @ptrCast(@alignCast(vv.data.byref));
-            return valueFromVariant(self, inner);
-        }
-        return .null;
-    }
-    switch (vt) {
-        VT_EMPTY, VT_NULL => return .null,
-        VT_I2 => return .{ .int = @as(*align(1) const i16, @ptrCast(&vv.data.llVal)).* },
-        VT_I4, VT_INT, VT_HRESULT => return .{ .int = vv.data.lVal },
-        VT_UI4, VT_UINT => return .{ .int = vv.data.uintVal },
-        VT_I8 => return .{ .int = vv.data.llVal },
-        VT_R4 => return .{ .float = @as(*align(1) const f32, @ptrCast(&vv.data.llVal)).* },
-        VT_R8 => return .{ .float = vv.data.dblVal },
-        // OLE date (Tran1.Date etc.) — was silently .null before M1;
-        // BUSY's display format is DD/MM/YYYY.
-        VT_DATE => {
-            var b: [16]u8 = undefined;
-            return .{ .str = try self.alloc.dupe(u8, try helpers.oleDateToText(&b, vv.data.dblVal)) };
-        },
-        VT_BOOL => return .{ .bool = vv.data.boolVal != 0 },
-        VT_BSTR => {
-            const b = vv.data.bstrVal orelse return .null;
-            const len = SysStringLen(b);
-            const s = fromUtf16(self.alloc, b, len) catch return error.OutOfMemory;
-            return .{ .str = s };
-        },
-        VT_DISPATCH, VT_UNKNOWN => {
-            // owned copy: every .str must be allocator-owned (freeing a
-            // static literal corrupts the heap — found via
-            // GetAllVchSeriesCodes returning a dispatch collection)
-            return .{ .str = try self.alloc.dupe(u8, "<dispatch>") };
-        },
-        VT_ERROR => return .null,
-        else => return .null,
-    }
-}
+// VARIANT<->JSON marshaling moved to marshal.zig (size-gate split);
+// re-exported here so existing call sites keep their imports.
+pub const variantFromValue = marshal.variantFromValue;
+pub const valueFromVariant = marshal.valueFromVariant;
 
 // ---------------- tests (pure) ----------------
 
@@ -385,6 +353,8 @@ test "byrefKindFromMarker maps every $byref marker" {
     try testing.expectEqual(ByrefKind.bstr, byrefKindFromMarker("bstr").?);
     try testing.expectEqual(ByrefKind.bool, byrefKindFromMarker("bool").?);
     try testing.expectEqual(ByrefKind.dispatch, byrefKindFromMarker("dispatch").?);
+    // collection read-back (VB6 Collection -> JSON array):
+    try testing.expectEqual(ByrefKind.collection, byrefKindFromMarker("collection").?);
     try testing.expect(null == byrefKindFromMarker("bogus"));
     try testing.expect(null == byrefKindFromMarker("BSTr")); // case-sensitive
 }
