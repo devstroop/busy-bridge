@@ -7,3 +7,4 @@ zig-out/
 *.log
 *.exp
 *.lib
+.DS_Store

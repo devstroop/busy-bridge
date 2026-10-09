@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: "0.17.0"
+
+jobs:
+  release:
+    name: release (${{ github.ref_name }})
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Same pinned install as CI (tarball + sha256 verified).
+      - name: Install Zig (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $idx = Invoke-RestMethod https://ziglang.org/download/index.json
+          $e = $idx.$env:ZIG_VERSION.'x86_64-windows'
+          Write-Host "fetching $($e.tarball)"
+          Invoke-WebRequest -Uri $e.tarball -OutFile zig.zip
+          $hash = (Get-FileHash zig.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $e.shasum.ToLower()) { throw "checksum mismatch: got $hash want $($e.shasum)" }
+          $dest = Join-Path $env:RUNNER_TEMP 'zig'
+          Expand-Archive zig.zip -DestinationPath $dest
+          $extracted = (Get-ChildItem $dest -Directory | Select-Object -First 1).FullName
+          Add-Content $env:GITHUB_PATH $extracted
+
+      - name: Verify Zig
+        shell: bash
+        run: zig version
+
+      # Tag is the source of truth for the release name; the binary still
+      # reports the hardcoded VERSION from src/transport/cli.zig (issue 010:
+      # full git-describe versioning is a follow-up). Fail fast on drift so
+      # vX.Y.Z never ships a binary that prints something else.
+      - name: Check tag matches VERSION
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:GITHUB_REF_NAME
+          if (-not $tag.StartsWith('v')) { throw "tag must start with v, got $tag" }
+          $want = $tag.Substring(1)
+          $line = Select-String -Path src/transport/cli.zig -Pattern '^\s*pub const VERSION = "([^"]+)"' | Select-Object -First 1
+          if (-not $line) { throw 'VERSION not found in src/transport/cli.zig' }
+          $have = $line.Matches[0].Groups[1].Value
+          Write-Host "tag $tag -> want $want; cli.zig VERSION=$have"
+          if ($want -ne $have) { throw "tag/version drift: tag wants $want but cli.zig VERSION is $have" }
+
+      # Same gates as CI — a release never skips them.
+      - name: Check formatting
+        run: zig fmt --check build.zig src
+
+      - name: Check layer boundaries
+        shell: pwsh
+        run: ./scripts/check_layers.ps1
+
+      - name: Check file sizes
+        shell: pwsh
+        run: ./scripts/check_size.ps1
+
+      # Windows-native ReleaseSafe build is the release provenance (issue 010:
+      # cross-compiled Linux artifact was considered and rejected for now).
+      - name: Build (ReleaseSafe)
+        run: zig build -Doptimize=ReleaseSafe
+
+      # check_tests.ps1 already runs `zig build test` internally and fails
+      # when any test fails, so no separate Unit tests step is needed.
+      - name: Check test discovery count
+        shell: pwsh
+        run: ./scripts/check_tests.ps1
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $want = $env:GITHUB_REF_NAME.Substring(1)
+          $v = ((& 'zig-out\bin\busy-bridge.exe' version) -join "`n")
+          Write-Output $v
+          $pat = '^busy-bridge\s+' + [regex]::Escape($want) + '(?=\s)'
+          if ($LASTEXITCODE -ne 0 -or $v -notmatch $pat) { throw "version smoke failed: $v (want $want)" }
+          $c = ((& 'zig-out\bin\busy-bridge.exe' classes) -join "`n")
+          if ($LASTEXITCODE -ne 0) { throw 'classes smoke failed' }
+          Write-Output ($c.Substring(0, [Math]::Min(160, $c.Length)))
+
+      # Layout: dist/ holds the bare exe + SHA256SUMS; the zip bundles both
+      # for download, plus a detached .sha256 for the zip itself.
+      - name: Package + checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:GITHUB_REF_NAME
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item 'zig-out\bin\busy-bridge.exe' dist/
+          $h = (Get-FileHash dist/busy-bridge.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  busy-bridge.exe`n" | Out-File dist/SHA256SUMS -Encoding ascii -NoNewline
+          $zip = "busy-bridge-$tag-windows-x86.zip"
+          Compress-Archive -Path dist/* -DestinationPath $zip -Force
+          $zh = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$zh  $zip`n" | Out-File "$zip.sha256" -Encoding ascii -NoNewline
+          Get-ChildItem dist, $zip, "$zip.sha256" | Format-Table Name, Length
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            busy-bridge-*.zip
+            busy-bridge-*.zip.sha256
+            dist/SHA256SUMS
