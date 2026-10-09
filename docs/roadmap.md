@@ -20,8 +20,17 @@ exposure policy (004) is also closed — non-loopback bind requires a token.
 + CLI `op` + HTTP `/v1` with opaque keyset cursors; multi-company serve
 (005) is swap-based `?comp=`/`X-Company`. Eleven live suites green.
 
+**Source restructure (011) is done** (2026-10-09): every oversized module
+split into responsibility-named folders behind barrels (no file > 400
+lines; layout + conventions in [`architecture.md`](architecture.md)),
+the size gate is a CI step, and test discovery was fixed (26 tests had
+never run; 73/73 now). Repo-split precondition satisfied — triggers
+recorded in the decision records below.
+
 **What remains is consumers (H2)**: web/mobile apps against `/v1`, and
-the MCP adapter (008 — blocked by neither 007 nor 004 anymore).
+the MCP adapter (008 — blocked by neither 007 nor 004 anymore); plus
+engineering ops (009 record/replay CI, 010 release — deferred until the
+work is finished).
 
 Verb-clustering of the 16 core classes reveals the shape of what's next:
 
