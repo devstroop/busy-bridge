@@ -46,3 +46,16 @@ become contract evidence (BUSY-00x acceptance).
 Discovery probes deliberately guess argument shapes (`{}` documents,
 empty collections): the captured error text *is* the finding — refine
 the manifest iteratively and keep superseded results as the trail.
+
+## Fixture credentials
+
+String args of the form `"@env:VAR"` expand to environment variables
+before the probe runs — **credentials never enter the repo**
+(GitGuardian-clean by design; a missing variable fails the probe with
+a clear message). The live login fixtures need:
+
+```powershell
+$env:BUSY_PROBE_ADMIN_PW = '<admin password>'
+$env:BUSY_PROBE_USER1_PW = '<user1 password>'
+powershell -File tests\probe\invoke-probes.ps1 -Filter 'vupw-'
+```

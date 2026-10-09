@@ -46,8 +46,18 @@ New-Item -ItemType Directory -Path $run -Force | Out-Null
 $summary = @()
 foreach ($p in $probes) {
     # -InputObject: piping an empty array to ConvertTo-Json yields nothing.
-    $b64 = [Convert]::ToBase64String(
-        [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $p.args -Compress -Depth 6)))
+    # "@env:NAME" tokens in string args expand to env vars (fixture
+    # credentials never enter the repo — GitGuardian-clean by design).
+    $argJson = ConvertTo-Json -InputObject $p.args -Compress -Depth 6
+    $argJson = [regex]::Replace($argJson, '"@env:([A-Za-z_][A-Za-z0-9_]*)"', {
+        param($m)
+        $v = [Environment]::GetEnvironmentVariable($m.Groups[1].Value)
+        if ($null -eq $v) {
+            throw "environment variable '$($m.Groups[1].Value)' is required by this probe but not set"
+        }
+        ConvertTo-Json -InputObject $v -Compress
+    })
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argJson))
     $argStr = "call --method $($p.method) --args-b64 $b64"
     if ($p.progId) { $argStr += " --prog-id $($p.progId)" }
     if ($p.useComp) { $argStr += " --comp $Comp" }
