@@ -68,6 +68,7 @@ test "test aggregation for the build test root" {
     _ = @import("envelope.zig");
     _ = @import("auth.zig"); // issue #4 token gate (pure suites)
     _ = @import("sessions.zig"); // issue #5 multi-company switcher (pure suites)
+    _ = @import("user_sessions.zig"); // BUSY-010 user-session store (pure suites)
     _ = @import("v1.zig"); // issue #7 /v1 facade (pure suites)
     _ = @import("format/wire.zig"); // issue #11 phase 3 split suites
     _ = @import("format/call.zig");

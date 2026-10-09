@@ -85,6 +85,50 @@ pub fn newestFixedInterface() ?[]const u8 {
 }
 
 var newest_buf: [64]u8 = undefined;
+var newest_prog_buf: [96]u8 = undefined;
+
+/// Newest registered `Busy2L<n>.<suffix>` ProgID (e.g. suffix
+/// "COtherServices1" -> "Busy2L21.COtherServices1"), or null when the
+/// class is not registered on any version. Same read-only scan rules as
+/// [newestFixedInterface]; process-lifetime static buffer.
+pub fn newestProgId(suffix: []const u8) ?[]const u8 {
+    var h: ?*anyopaque = null;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Classes", 0, KEY_READ, &h) != ERROR_SUCCESS)
+        return null;
+    defer _ = RegCloseKey(h);
+    var found = false;
+    var best_gen: u32 = 0;
+    var i: u32 = 0;
+    while (true) : (i += 1) {
+        var name: [512]u8 = undefined;
+        var n: u32 = name.len;
+        const rc = RegEnumKeyExA(h, i, &name, &n, null, null, null, null);
+        if (rc == ERROR_NO_MORE_ITEMS) break;
+        if (rc != ERROR_SUCCESS) continue;
+        if (classGeneration(name[0..n], suffix)) |gen| {
+            if (!found or gen > best_gen) {
+                found = true;
+                best_gen = gen;
+            }
+        }
+    }
+    if (!found) return null;
+    const s = std.fmt.bufPrint(&newest_prog_buf, "Busy2L{d:0>2}.{s}", .{ best_gen, suffix }) catch return null;
+    return s;
+}
+
+/// "Busy2L21.COtherServices1" + suffix "COtherServices1" -> 21; null else.
+pub fn classGeneration(name: []const u8, suffix: []const u8) ?u32 {
+    if (!std.mem.endsWith(u8, name, suffix)) return null;
+    const rest = name[0 .. name.len - suffix.len];
+    if (!std.mem.endsWith(u8, rest, ".")) return null;
+    const head = rest[0 .. rest.len - 1];
+    const prefix = "Busy2L";
+    if (!std.mem.startsWith(u8, head, prefix)) return null;
+    const digits = head[prefix.len..];
+    if (digits.len == 0) return null;
+    return std.fmt.parseInt(u32, digits, 10) catch null;
+}
 
 /// "Busy2L21.CFixedInterface" -> 21; null for anything else.
 pub fn fixedInterfaceGeneration(name: []const u8) ?u32 {

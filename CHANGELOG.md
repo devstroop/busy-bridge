@@ -6,6 +6,20 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- BUSY-010/011 auth per the merged contract (`docs/auth-contract.md`):
+  opaque 256-bit user-session tokens (BCryptGenRandom, base64url,
+  constant-time compare, idle/absolute TTLs; `transport/user_sessions.zig`);
+  `POST /auth/login` on the probe-verified path (company ensure →
+  `CheckIfLoginDetRequired` via COtherServices1 aux → `ValidUserPassword`
+  on the main dispatch → `GetCompConfigJSON` payload), `GET /auth/me`,
+  idempotent `POST /auth/logout`; no user enumeration (identical
+  invalid-credentials response for wrong password and unknown users).
+  `serve --require-session` arms the /v1+/op session gate
+  (`401 unauthorized`), `--super-user` (default Admin) selects the
+  provisional full-rights identity (everyone else deny-all until per-user
+  rights capture), `--session-idle-ttl`/`--session-abs-ttl` configure
+  lifetimes; `auth_mode` (off|token|session) reported in `/info` + boot
+  line. Raw `/call` `/query` remain device-tier pending BUSY-013.
 - `version` reports the git-describe version plus short commit
   (`busy-bridge 0.1.0 (commit abc1234, …)`); tarball builds without a
   checkout fall back to `0.1.0`/`unknown`.

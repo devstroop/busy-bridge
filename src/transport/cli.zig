@@ -39,6 +39,11 @@ pub const Usage =
     \\       [--max-rows N]                             row cap (default 10000; 0 = unlimited)
     \\       [--token T]                                auth token (or BUSY_BRIDGE_TOKEN env);
     \\                                              non-loopback --host refuses without it
+    \\       [--require-session]                        BUSY-011: /v1+/op need a user session
+    \\                                              (POST /auth/login; see docs/auth-contract.md)
+    \\       [--super-user NAME]                        provisional full-rights identity
+    \\                                              (default Admin; others deny-all)
+    \\       [--session-idle-ttl S] [--session-abs-ttl S]  session TTLs (default 43200/604800)
     \\  busy-bridge version
     \\
     \\common options: --prog-id (default: auto-discovered newest registered
@@ -60,6 +65,16 @@ pub const Cli = struct {
             if (std.mem.eql(u8, self.items[i], key)) return self.items[i + 1];
         }
         return null;
+    }
+
+    /// Valueless flag presence (`--require-session`), anywhere in argv —
+    /// `get` needs a value token after the key and cannot see a trailing
+    /// bare flag.
+    pub fn flag(self: Cli, key: []const u8) bool {
+        for (self.items) |it| {
+            if (std.mem.eql(u8, it, key)) return true;
+        }
+        return false;
     }
 
     pub fn getOr(self: Cli, key: []const u8, dflt: []const u8) []const u8 {

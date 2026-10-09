@@ -68,9 +68,10 @@ pub fn routeMeta(
 
     if (eql(verb, "GET") and eql(path, "/info")) {
         const active = ctx.sw.current orelse ctx.sw.opts.comp;
+        const auth_mode = sh.authMode(ctx.require_session, ctx.token);
         if (fmt == .xml)
-            return .{ .status = "200 OK", .content_type = xct, .payload = try format.infoXml(ralloc, cli_mod.VERSION, ctx.prog_id, active, ctx.sw.switches) };
-        return .{ .status = "200 OK", .content_type = jct, .payload = try format.infoJson(ralloc, cli_mod.VERSION, ctx.prog_id, active, ctx.sw.switches) };
+            return .{ .status = "200 OK", .content_type = xct, .payload = try format.infoXml(ralloc, cli_mod.VERSION, ctx.prog_id, active, ctx.sw.switches, auth_mode) };
+        return .{ .status = "200 OK", .content_type = jct, .payload = try format.infoJson(ralloc, cli_mod.VERSION, ctx.prog_id, active, ctx.sw.switches, auth_mode) };
     }
 
     if (eql(verb, "GET") and eql(path, "/constants")) {

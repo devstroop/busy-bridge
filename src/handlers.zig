@@ -17,6 +17,7 @@ pub const exec = @import("handlers/exec.zig");
 pub const batch = @import("handlers/batch.zig");
 pub const reports = @import("handlers/reports.zig");
 pub const catalog = @import("handlers/catalog.zig");
+pub const auth = @import("handlers/auth.zig");
 
 const Allocator = std.mem.Allocator;
 
