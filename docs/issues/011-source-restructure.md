@@ -57,10 +57,11 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       postResult, delete + both doc-builder tests). Test count green.
       *Note: landed together with the test-discovery fix (b7d51d0) —
       26 tests had never run before that commit.*
-- [ ] **Phase 2 — common**: → `common/value.zig` (~150, put/objFrom/merge/dup/
-      stringify) + `common/sql.zig` (~120, resolveNames/codeByName) +
-      `common/dates.zig` (~60) + `common/cursor.zig` (~50). One commit —
-      the barrel must stay complete.
+- [x] **Phase 2 — common**: barrel (46) + `common/value.zig` (215:
+      put/objFrom/merge/dup/stringify/containsCi/childStr + 4 tests) +
+      `common/sql.zig` (110: resolveNames/codeByName/classProgId + 1
+      test) + `common/dates.zig` (69 + 2 tests) + `common/cursor.zig`
+      (48 + 1 test). One commit — the barrel stayed complete. Tests: 73.
 - [ ] **Phase 3 — format**: → `format/wire.zig` (negotiation) +
       `format/call.zig` (enrichCallResult/xmlifyArgs + tests) +
       `format/xml_envelopes.zig` (errorXml/info/constants/surface/rows/callXml).
