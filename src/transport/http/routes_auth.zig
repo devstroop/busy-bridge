@@ -67,6 +67,13 @@ fn helpers_err(err: anyerror) []const u8 {
     };
 }
 
+/// BUSY usernames are case-insensitive (live-verified: the fixture user
+/// is `admin`, the BUSY UI shows `Admin`) — the provisional super-user
+/// rights check must match the same way.
+pub fn isSuperUser(user: []const u8, super_user: []const u8) bool {
+    return std.ascii.eqlIgnoreCase(user, super_user);
+}
+
 fn rightsOf(alloc: Allocator, is_super: bool) !json.Value {
     var e: std.ArrayList(json.Value.Entry) = .empty;
     if (is_super) try ops.common.put(alloc, &e, "all", .{ .bool = true });
@@ -125,7 +132,7 @@ fn login(ctx: ConnCtx, ralloc: Allocator, fmt: Format, body: []const u8) Route {
     const token = ctx.us.issue(username.str, comp.str, fy, nowSecs()) catch |err| {
         return deny(ralloc, fmt, "500 Internal Server Error", "internal", @errorName(err));
     };
-    const is_super = eql(username.str, ctx.super_user);
+    const is_super = isSuperUser(username.str, ctx.super_user);
     return loginResult(ralloc, fmt, token, username.str, comp.str, fy, is_super, config) catch |err| {
         return deny(ralloc, fmt, "500 Internal Server Error", "internal", @errorName(err));
     };
@@ -134,7 +141,7 @@ fn login(ctx: ConnCtx, ralloc: Allocator, fmt: Format, body: []const u8) Route {
 fn me(ctx: ConnCtx, ralloc: Allocator, fmt: Format) !Route {
     const e = ctx.us.verify(ctx.user_token, nowSecs()) orelse
         return deny(ralloc, fmt, "401 Unauthorized", "unauthorized", "valid user session required (POST /auth/login)");
-    const is_super = eql(e.user, ctx.super_user);
+    const is_super = isSuperUser(e.user, ctx.super_user);
     var ee: std.ArrayList(json.Value.Entry) = .empty;
     try ops.common.put(ralloc, &ee, "user", .{ .str = try ralloc.dupe(u8, e.user) });
     try ops.common.put(ralloc, &ee, "is_mobile_user", .{ .bool = false });
@@ -165,4 +172,17 @@ fn loginResult(
     try ops.common.put(alloc, &e, "rights", try rightsOf(alloc, is_super));
     const result = try ops.common.objFrom(alloc, &e);
     return .{ .status = "200 OK", .content_type = sh.ctOf(fmt), .payload = try envelope.okWrap(alloc, "result", &result) };
+}
+
+// ---------------- tests (pure, no COM) ----------------
+
+const testing = std.testing;
+
+test "isSuperUser is case-insensitive (BUSY usernames)" {
+    try testing.expect(isSuperUser("admin", "Admin"));
+    try testing.expect(isSuperUser("Admin", "admin"));
+    try testing.expect(isSuperUser("ADMIN", "Admin"));
+    try testing.expect(!isSuperUser("user1", "Admin"));
+    try testing.expect(!isSuperUser("", "Admin"));
+    try testing.expect(!isSuperUser("admin ", "Admin"));
 }
