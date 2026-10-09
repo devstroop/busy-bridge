@@ -74,12 +74,15 @@ server, see Decision records) an archaeology project instead of a `git mv`.
       a lazy cycle proven in phase 1) + `commands/raw.zig` (276:
       classes/surface/query/call) + `commands/ops.zig` (370: cmdOp/report/
       write). `run()` switch unchanged. Tests: 73.
-- [ ] **Phase 5 — http (last, highest risk)**: `http/`shared.zig` (Route,
-      errPayload, qparam, opOk/opErr) + `http/routes_meta.zig` +
-      `http/routes_raw.zig` + `http/routes_ops.zig`. `route()` = thin
-      ordered dispatcher (company-ensure → v1 → meta → raw → ops → 404);
-      each module returns `!?Route`, `null` = fall through (proven `v1.zig`
-      pattern). `serve()`/`handleConn`/auth gate do not move.
+- [x] **Phase 5 — http (last, highest risk)**: dispatcher (296: handleConn,
+      serve, auth gate — never moved — and the ordered `route()` =
+      company-ensure → meta → v1 → ops → raw → 404) + `http/shared.zig`
+      (114: ConnCtx/Route + errPayload/ctOf/qparam/badReq/denyQuery/
+      opOk/opErr) + `http/routes_meta.zig` (83) + `http/routes_ops.zig`
+      (210) + `http/routes_raw.zig` (177). Each group returns `!?Route`,
+      null = fall through (proven v1.zig pattern). `opOk` now returns
+      `!?Route` so groups return it directly. Tests: 73. Size-gate
+      transitional list now EMPTY (only by-design entries remain).
 - [ ] **Phase 6 — docs + wrap-up**: architecture note (folder map, barrel
       convention, "how to add a route/op"), tick phases, final full gates +
       live run-all; merge `dev → master` **only after** coordinating with

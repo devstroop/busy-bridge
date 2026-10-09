@@ -24,8 +24,7 @@ $srcWarnLimit = 300
 $testFailLimit = 200
 
 $exempt = @{
-    # --- transitional: issue 011 phases (delete the entry when the phase lands) ---
-    'src/transport/http.zig'     = '[transitional] issue 011 phase 5: route() split into http/{shared,routes_meta,routes_raw,routes_ops}.zig'
+    # --- transitional: issue 011 phases (all landed — list empty) ---
     # --- by design (permanent) ---
     'src/util/xml/parse.zig'     = '[by design] single cohesive parse state machine, fixtures-tested as a unit; splitting would fragment it'
     'src/core/ops/reports.zig'   = '[by design] named report operations, one probe-verified call pattern each; single responsibility'
