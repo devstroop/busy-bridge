@@ -23,7 +23,8 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 # History: 82 (iteration-4) -> 83 (+byrefKindFromMarker, typed ByRef).
 # 89 -> 91 (+daybook.zig: oleDay, splitDrCr).
 # 91 -> 93 (+rights.zig: repIdForName, canViewReport).
-$Expected = 94
+# 94 -> 95 (+recordinfo.zig: shapeFromName, the $record shape knob).
+$Expected = 95
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)

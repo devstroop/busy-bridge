@@ -76,4 +76,5 @@ test "test aggregation for the build test root" {
     _ = @import("format/call.zig");
     _ = @import("format/xml_envelopes.zig");
     _ = @import("../core/com/replay/tests.zig"); // issue #9 replay suites (host-agnostic)
+    _ = @import("../core/com/recordinfo.zig"); // iteration-19 $record shape sweep (pure suite)
 }

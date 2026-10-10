@@ -646,3 +646,42 @@ The login path now has all four legs verified:
 
 
 
+
+## 19. Iteration 19 — $record INPUT SOLVED: bare VT_RECORD is the canonical shape (2026-10-10)
+The §12 RECORD wall had one side left open: the VARIANT shape for
+UDT *input* params ("all shapes 0x80020005"). Solved by re-running the
+matrix on a **trap-free discriminator** — `CopyVchData(udtVchData)`
+(`CTranServices`, single UDT param, no other param traps to confound
+the result) and the void initializers — with a BUSY_REC_SHAPE sweep
+knob added to the boxing:
+
+| shape | CopyVchData | InitUDTAccMast | InitUdtVchData |
+|---|---|---|---|
+| `byrefvar` (pre-§19 default) VT_BYREF\|VT_VARIANT?inner VT_RECORD | 0x80020005 | 0x80020005 | 0x80020005 |
+| **`byval` bare VT_RECORD {pvRecord, pRecInfo}** | callee runs (business raise — needs full nested VT_PTR content) | **ok:true** | **ok:true** |
+| `byrefrec` VT_BYREF\|VT_RECORD | callee runs | ok:true | ok:true |
+
+- **`byval` is now the shipped default** — the earlier §12 matrix's
+  "byval ? 0x80020005" verdict was wrong (that attempt predates the
+  real-runtime `pRecInfo` via `GetRecordInfoFromTypeInfo`; without it
+  the callee's type check rejects everything). htypes used:
+  udtAccMast **50332609**, udtVchData **50332129** (from `--types`
+  param TYPEDESC decode — note GetAccHSNOnSpecificDate's param is
+  *direct* VT_USERDEFINED, not VT_PTR).
+- `GetAccMastData`/`ByCode` returns decode to `null` via ret_udt
+  (empty/uninitialized record) — round-trip via JSON is therefore
+  not needed for content; the Init* family (`InitUDTAccMast`,
+  `InitUdtVchData`, `InitUdtVSGrpConfig`, ~35 more on
+  `COtherServices`/`COtherServices1`) are the clean per-UDT
+  initializers.
+- **Leak fixed en route**: the byrefvar inner box VARIANT (16 B) was
+  never freed — `RecBox` now owns it (`box` field, freed in
+  destroy); SafeAllocator flagged it on the error path.
+- Content-side walls that REMAIN (shape is no longer the blocker):
+  `CopyVchData` business-raises on partially-filled records (needs
+  the nested `ItemEntries`/`AccEntries` VT_PTR arrays populated —
+  $collection-in-record is the next marshaling step); the §18
+  series-gate writers (`SaveVchSeriesGrpConfig(udtVchSeriesGrpConfig)`,
+  `ConfigMobileAppSeries`) are now *callable* — populating
+  udtVchSeriesGrpConfig via `InitUdtVSGrpConfig` + field fill is the
+  next JSON-save unblock attempt.
