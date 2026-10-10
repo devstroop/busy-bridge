@@ -44,10 +44,14 @@ const DISPATCH_METHOD: u32 = 0x1;
 
 /// A record arg's owned payload (the hand-built UDT buffer; freed
 /// after the invoke — BSTR fields inside are process-lifetime for now).
+/// `box` is the byrefvar-shape inner VARIANT (owned; freed too — it
+/// leaked 16 B/record on the error path until iteration 19).
 pub const RecBox = struct {
     buf: [*]u8,
     size: u32,
+    box: ?*win32.VARIANT = null,
     pub fn destroy(self: *RecBox, alloc: Allocator) void {
+        if (self.box) |b| alloc.destroy(b);
         alloc.free(self.buf[0..self.size]);
     }
 };
@@ -89,13 +93,16 @@ pub fn fillInputMarker(
         const flds = rd.get("fields") orelse return error.BadArgs;
         if (ht.* != .int) return error.BadArgs;
         const rec = try @import("recordinfo.zig").recordFromHreftype(sess, sess.alloc, @intCast(ht.int), flds);
-        // VT_BYREF|VT_VARIANT -> inner VT_RECORD; the buffer is the
-        // inner pRecValue; size stashed in r2.
-        const boxv: *VARIANT = @ptrCast(@alignCast(rec.data.byref.?));
-        const buf: [*]u8 = @ptrCast(boxv.data.rec.pRecValue.?);
+        // Extract the payload buffer for cleanup; the byrefvar shape
+        // wraps the record in an owned inner VARIANT (freed via RecBox).
+        var recbox: ?*win32.VARIANT = null;
+        const buf: [*]u8 = if (rec.vt == (win32.VT_BYREF | win32.VT_VARIANT)) blk: {
+            recbox = @ptrCast(@alignCast(rec.data.byref.?));
+            break :blk @ptrCast(recbox.?.data.rec.pRecValue.?);
+        } else @ptrCast(rec.data.rec.pRecValue.?);
         const rbsize: u32 = rec.r2;
         const rb = try sess.alloc.create(RecBox);
-        rb.* = .{ .buf = buf, .size = rbsize };
+        rb.* = .{ .buf = buf, .size = rbsize, .box = recbox };
         recboxes[i] = rb;
         filled.* += 1;
         storage[i] = rec;

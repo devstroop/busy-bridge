@@ -275,18 +275,49 @@ pub fn recordFromUdtTi(
     }
 
     var out = VARIANT.init();
-    // VB6 ByRef-UDT shape: VT_BYREF|VT_VARIANT -> inner VT_RECORD
-    // (VB6 Invoke unwraps the pointed variant; bare byref-record and
-    // byval-record both 0x80020005 live).
+    // VB6 UDT-param shape (sweepable via BUSY_REC_SHAPE, iteration 19):
+    // "byrefvar" (default/shipped) = VT_BYREF|VT_VARIANT -> inner
+    // VT_RECORD; "byval" = bare VT_RECORD; "byrefrec" = VT_BYREF|VT_RECORD.
+    // All three clean-0x80020005 on the CopyVchData discriminator until
+    // a shape lands (probe report §19).
     const ri = try recordInfoFor(sess, ti_udt);
-    const box = alloc.create(VARIANT) catch return error.OutOfMemory;
-    box.* = VARIANT.init();
-    box.vt = win32.VT_RECORD;
-    box.data.rec = .{ .pRecValue = buf.ptr, .pRecInfo = ri };
-    out.vt = win32.VT_BYREF | win32.VT_VARIANT;
-    out.data.byref = box;
+    switch (shapeFromEnv(alloc)) {
+        .byval => {
+            out.vt = win32.VT_RECORD;
+            out.data.rec = .{ .pRecValue = buf.ptr, .pRecInfo = ri };
+        },
+        .byrefrec => {
+            out.vt = win32.VT_BYREF | win32.VT_RECORD;
+            out.data.rec = .{ .pRecValue = buf.ptr, .pRecInfo = ri };
+        },
+        .byrefvar => {
+            const box = alloc.create(VARIANT) catch return error.OutOfMemory;
+            box.* = VARIANT.init();
+            box.vt = win32.VT_RECORD;
+            box.data.rec = .{ .pRecValue = buf.ptr, .pRecInfo = ri };
+            out.vt = win32.VT_BYREF | win32.VT_VARIANT;
+            out.data.byref = box;
+        },
+    }
     out.r2 = @truncate(d.size); // cleanup size stash (u16)
     return out;
+}
+
+/// Probe knob for the $record input shape (iteration 19): BUSY_REC_SHAPE
+/// selects the VARIANT boxing — "byrefvar" (default, shipped shape)
+/// VT_BYREF|VT_VARIANT→inner VT_RECORD, "byval" bare VT_RECORD, or
+/// "byrefrec" VT_BYREF|VT_RECORD. Pure name mapping for tests.
+pub const RecShape = enum { byval, byrefrec, byrefvar };
+pub fn shapeFromName(s: []const u8) RecShape {
+    if (std.mem.eql(u8, s, "byrefrec")) return .byrefrec;
+    if (std.mem.eql(u8, s, "byrefvar")) return .byrefvar;
+    return .byval;
+}
+pub fn shapeFromEnv(alloc: Allocator) RecShape {
+    const own_env: std.process.Environ = .{ .block = .global };
+    const v = own_env.getAlloc(alloc, "BUSY_REC_SHAPE") catch return .byval;
+    defer alloc.free(v);
+    return shapeFromName(v);
 }
 
 /// HREFTYPE-based entry (the proven path): {"$record":{htype,fields}}.
@@ -312,4 +343,16 @@ pub fn recordFromHreftype(
     };
     defer _ = tudt.vtbl.Release(tudt);
     return recordFromUdtTi(sess, alloc, tudt, hreftype, fields);
+}
+
+// ---------------- tests (pure) ----------------
+
+const testing = std.testing;
+
+test "shapeFromName maps the BUSY_REC_SHAPE sweep values" {
+    try testing.expectEqual(RecShape.byval, shapeFromName(""));
+    try testing.expectEqual(RecShape.byval, shapeFromName("bogus"));
+    try testing.expectEqual(RecShape.byval, shapeFromName("byval"));
+    try testing.expectEqual(RecShape.byrefrec, shapeFromName("byrefrec"));
+    try testing.expectEqual(RecShape.byrefvar, shapeFromName("byrefvar"));
 }

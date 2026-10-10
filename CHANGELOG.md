@@ -122,3 +122,16 @@ First tagged release. Windows x86 artifact (`busy-bridge-v0.1.0-windows-x86.zip`
 
 [Unreleased]: https://github.com/devstroop/busy-bridge/compare/v0.1.0...master
 [0.1.0]: https://github.com/devstroop/busy-bridge/releases/tag/v0.1.0
+
+- **`$record` INPUT SOLVED (probe §19)**: bare VT_RECORD
+  (`{pvRecord, pRecInfo}` with the real runtime IRecordInfo) is the
+  canonical VB6 UDT-param shape — the pre-existing byrefvar default
+  was the rejector. `byval` is now the shipped default (BUSY_REC_SHAPE
+  sweeps byrefrec/byrefvar); live-proven on `InitUDTAccMast`
+  (udtAccMast htype 50332609) and `InitUdtVchData` (50332129) —
+  `ok:true` both, vs 0x80020005 for the old shape. CopyVchData
+  discriminates cleanly (callee runs; its business check needs nested
+  VT_PTR content — the next step). Leak fixed: the byrefvar inner box
+  VARIANT is now owned by RecBox (was 16 B/record on the error path).
+  Tests 95/95 (+shapeFromName pure suite via the format.zig discovery
+  block).
