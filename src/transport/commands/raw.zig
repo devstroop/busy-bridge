@@ -86,6 +86,40 @@ pub fn cmdSurface(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
         return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
     };
     const filter = cli.get("--member");
+    if (cli.flag("--types")) {
+        // Raw FUNCDESC hex (param-type calibration; probe harness).
+        const dumps = sess.surfaceTypes(alloc, filter orelse "") catch |err| {
+            var cb: [64]u8 = undefined;
+            const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
+            return fail(io, alloc, fmt, helpers.errCode(err, &cb), msg);
+        };
+        defer {
+            for (dumps) |*m| m.deinit(alloc);
+            alloc.free(dumps);
+        }
+        var out: std.ArrayList(u8) = .empty;
+        defer out.deinit(alloc);
+        var w = json.Writer{ .buf = &out, .alloc = alloc };
+        w.raw("{\"prog_id\":") catch return 1;
+        w.str(o.prog_id) catch return 1;
+        w.raw(",\"members\":[") catch return 1;
+        for (dumps, 0..) |m, i| {
+            if (i != 0) w.raw(",") catch return 1;
+            w.raw("{\"name\":") catch return 1;
+            w.str(m.name) catch return 1;
+            var nbuf: [24]u8 = undefined;
+            w.raw(std.fmt.bufPrint(&nbuf, ",\"nparams\":{d},\"fd_hex\":\"", .{m.nparams}) catch unreachable) catch return 1;
+            const hex = "0123456789abcdef";
+            for (m.fd_raw[0..m.fd_len]) |b| {
+                w.raw(&.{ hex[b >> 4], hex[b & 0xf] }) catch return 1;
+            }
+            w.raw("\"}") catch return 1;
+        }
+        w.raw("]}") catch return 1;
+        try printOut(io, alloc, out.items);
+        try printOut(io, alloc, "\n");
+        return 0;
+    }
     if (fmt == .xml) {
         const members = sess.surface(alloc) catch |err| {
             var cb: [64]u8 = undefined;

@@ -296,6 +296,41 @@ BUSY-004's input side (`p_ICol` params) is solved
   `Session.clearErr()` now drops the benign `OpenDB` NoSuchMember
   probe so stale messages can't ride on later failures.
 
+## 9. Iteration 9 — typelib dumps + ledger tail SOLVED (2026-10-10)
+
+**`surface --member X --types`** (new): raw FUNCDESC hex dump,
+calibrated live against known methods:
+
+- `cParams` @ byte 24 (existing code, re-confirmed), **return
+  `VARTYPE` @ byte 36** (TYPEDESC is `{union@0, vt@4}` — elemdescFunc
+  base @32): `CheckUserRightsForReports` → VT_BOOL (11),
+  `GetAccDayBookJSON`/`GetAccLedgerJSON` → **VT_BSTR (8)** — both
+  JSON-*string* getters. This machinery is the type oracle for every
+  future probe (param ELEMDESC array is inline beyond byte ~48; not
+  yet decoded field-by-field).
+
+**`GetAccLedgerJSON` tail SOLVED** (was DISP_E_TYPEMISMATCH across
+all earlier guesses): `(p_ICol, p_Err={"$byref":"bstr"},
+p_OpBal=<plain>, p_PartialData=<plain>, p_PartialStartDate=<plain or
+{"$date"}>, p_ChkUserRights=<{"$byref":"bool"}>, p_ChkPartyMode=
+<{"$byref":"bool"}>)` — plain scalars accepted for positions 3-5
+(it was the `""` strings in earlier attempts that broke coercion!);
+the two chk flags are **typed ByRef bools with write-back** (live:
+`outs` = `["", false, false]` with the byref form, `[""]` with plain).
+Minimum collection sizes: ledger ≥3 items, day-book ≥4.
+
+**Still `{}` for rows** with every layout tried so far (dates DD/MM,
+ISO, VT_DATE, OLE; party at 1/2/3/4; code 1293 at 3; Admin at 3;
+p_Partial* variants; chk-flag forms) — while `Tran1` confirms the 3
+vouchers are committed and `GetCurrentUserBranchCode`=0. The item
+POSITIONS beyond the min-counts remain the black box: candidate
+solutions are the screen-report route
+(`GetRecordsetFromScreenReport(p_CSRName, p_RepOptObj)` /
+`ShowOnEnterScrRepDirect(p_ID, p_Repopt)` — needs CSR names or a
+RepOpt builder) or BUSY-side docs for the JSON API. SDK samples
+workspace-wide (`BUSY Integration/.../Modules/*.bas`) only show SQL
+collection helpers (`FlushCol`), not the JSON getters.
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user

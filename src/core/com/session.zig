@@ -173,6 +173,12 @@ pub const Session = struct {
         return surface_mod.surface(self, alloc);
     }
 
+    /// Raw FUNCDESC dumps for member(s) matching `filter` — param-type
+    /// calibration (`surface --member X --types`).
+    pub fn surfaceTypes(self: *Session, alloc: Allocator, filter: []const u8) ![]surface_mod.MemberDump {
+        return surface_mod.dumpMemberTypes(self, alloc, filter);
+    }
+
     pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !invoke_mod.CallResult {
         return invoke_mod.invoke(self, method, args);
     }
