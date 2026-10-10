@@ -31,6 +31,8 @@ pub const Usage =
     \\       e.g. op get voucher 1290 --comp C / op list vouchers --type sale
     \\  busy-bridge call --method M [--args '[..]']    invoke any COM method, JSON args,
     \\       [--prog-id P] [--comp C]                   {"$byref": v} marks out-params
+    \\       [--enumerate-ret]                          VT_DISPATCH return -> JSON array
+    \\                                                  (VB6 Collection Count/Item walk)
     \\  busy-bridge record --comp C [--out F]          record golden reads as JSONL
     \\       transcript for replay CI (needs BUSY; default F=transcript.jsonl)
     \\  busy-bridge serve [--port 9820] [--host H]     HTTP JSON API: GET /surface /classes

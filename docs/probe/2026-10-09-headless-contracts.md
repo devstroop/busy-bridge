@@ -235,6 +235,58 @@ resolution failure falls back to deny-all. Live-verified: admin
 **name** ↔ repID map for `/op/report/*` enforcement (identify via a
 GUI grant to user1 + re-sweep: the flipped ID is the report).
 
+**Collection read-back landed on the same day** (`core/com/collection.zig`):
+the VB6 Collection contract (`Count` + 1-based `Item`, direct
+`IDispatch::Invoke(DISPATCH_PROPERTYGET)` — no IEnumVARIANT QI) is
+walked into a JSON array via the new `{"$byref":"collection"}` out
+marker and `--enumerate-ret` (CLI) / `?enumerate_ret=1` (HTTP `/call`)
+for `VT_DISPATCH` return values; enumeration failure fails closed to
+`[]`, release exactly once. Live-verified A/B:
+`GetVchTypesForUserRights` → **`[9, 2, 3, 10, 11, 4, 5]`** (the
+voucher-type rights key space, BUSY type codes) vs `"<dispatch>"`
+without the flag; `GetUserList(true)` → **`["Admin", "User1"]`**.
+The voucher-type RIGHTS stay `{}` — BUSY exposes no per-user,
+per-voucher-type primitive (reports-only); the discovered key space
+is recorded for the day one exists.
+
+## 8. Iteration 8 — Collection INPUT marshaling works (2026-10-10)
+
+BUSY-004's input side (`p_ICol` params) is solved
+(`core/com/marshal.zig` + the `{"$collection": [...]}` marker):
+
+- **Source**: BUSY's OWN `GetCollectionObj` (CFixedInterface only —
+  calling it on the services session yields `no_such_member`, so it
+  runs on a transient default-class aux; company state is
+  process-global, no OpenDB needed). The VB6 runtime `Collection` is
+  NOT COM-registered (`CLSIDFromProgID('Collection')` → 0x800401f3;
+  msvbvm60's `DllGetClassObject` rejects the well-known CLSID with
+  CLASS_E_CLASSNOTAVAILABLE) — BUSY's in-process factory is the only
+  correct source.
+- **Shape**: items added via `Add` in order, passed as a typed
+  **`VT_BYREF|VT_DISPATCH`** box — matching the typelib's
+  `ByRef p_ICol As _Collection` (by-value VT_DISPATCH and
+  ByRef-Variant both fail: the latter with DISP_E_TYPEMISMATCH,
+  live-probed).
+- **Live `GetAccDayBookJSON`** (`[coll, {"$byref":"bstr"}, false,
+  false]`, `--args-b64`): 0 items → BUSY "Invalid procedure call or
+  argument"; 3 items → "Subscript out of range" (reads position ≥ 4);
+  **4+ items invoke cleanly**. **Collection item 3 is the rights
+  identity**: `[..., "Admin", ...]` clears BUSY's own
+  "User don't have rights to view this report." gate (other positions
+  do not) — BUSY's report-rights check runs inside the call against
+  this name. Success returns BUSY's day-book JSON as a string
+  (`"{}"` — COMP0001 has **0 vouchers**, `op list vouchers count=0`;
+  row-level confirmation needs a company with data) with empty
+  `p_Err`.
+- **Positional layout beyond item 3 unconfirmed** (1/2 are consumed
+  without date-parse errors but produce empty results; needs a
+  data-bearing company to pin From/To/filter positions).
+- Harness lessons recorded en route: PS5.1 mangles embedded double
+  quotes in `--args` (use `--args-b64`); `ExpectString`/`UnexpectedChar`
+  were OUR JSON parser (not BUSY — the args never reached COM);
+  `Session.clearErr()` now drops the benign `OpenDB` NoSuchMember
+  probe so stale messages can't ride on later failures.
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user

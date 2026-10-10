@@ -64,6 +64,7 @@ pub fn openCompany(sess: *busyc.Session, o: OpenOpts) !void {
             sess.setErr("OpenDB rejected company '{s}' in {s}", .{ comp, o.data });
             return error.OpenDbFailed;
         }
+        sess.clearErr(); // drop any stale sticky message on success
         return;
     } else |err| {
         if (err != error.NoSuchMember) return err;
@@ -85,6 +86,7 @@ pub fn openCompany(sess: *busyc.Session, o: OpenOpts) !void {
                 sess.setErr("OpenDB rejected company '{s}' in {s}", .{ comp, o.data });
                 return error.OpenDbFailed;
             }
+            sess.clearErr(); // the main-class NoSuchMember probe is expected
             return;
         } else |aerr| {
             sess.setErr("aux OpenDB failed: {s}", .{@errorName(aerr)});

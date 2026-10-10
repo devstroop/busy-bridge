@@ -55,6 +55,13 @@ pub const Session = struct {
         return self.err_buf[0..self.err_len];
     }
 
+    /// Clear the sticky error (e.g. an expected NoSuchMember probe
+    /// before an aux fallback succeeded — leaving it set makes later
+    /// failText responses carry a stale message).
+    pub fn clearErr(self: *Session) void {
+        self.err_len = 0;
+    }
+
     /// Read description of last COM error (IErrorInfo) into err_buf.
     pub fn loadErrorInfo(self: *Session) void {
         var ei: ?*IErrorInfo = null;
@@ -168,6 +175,12 @@ pub const Session = struct {
 
     pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !invoke_mod.CallResult {
         return invoke_mod.invoke(self, method, args);
+    }
+
+    /// Invoke with options (e.g. enumerate_ret: VT_DISPATCH return ->
+    /// JSON array via the VB6 Collection contract).
+    pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, opts: invoke_mod.InvokeOpts) !invoke_mod.CallResult {
+        return invoke_mod.invokeEx(self, method, args, opts);
     }
 
     pub fn queryToJson(self: *Session, sql: []const u8) !json.Value {

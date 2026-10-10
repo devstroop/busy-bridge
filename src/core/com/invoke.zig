@@ -6,6 +6,9 @@ const helpers = @import("../../util/helpers.zig");
 const Session = @import("session.zig").Session;
 const win32 = @import("win32.zig");
 const utf16 = @import("utf16.zig");
+const collection = @import("collection.zig");
+const marshal = @import("marshal.zig");
+const markers = @import("markers.zig");
 
 const Allocator = std.mem.Allocator;
 const VARIANT = win32.VARIANT;
@@ -42,20 +45,21 @@ const fromUtf16 = utf16.fromUtf16;
 
 pub const CallResult = @import("result.zig").CallResult;
 
-/// $byref box kinds (issue #7 M3 + iteration-5 typed VB6 ByRef).
-pub const ByrefKind = enum { variant, f8, i4, cy, i8, bstr, bool, dispatch };
+// Marker parsing split to markers.zig (size gate); re-exported so
+// existing call sites keep their imports.
+pub const ByrefKind = markers.ByrefKind;
+pub const byrefKindFromMarker = markers.byrefKindFromMarker;
 
-/// Pure marker parsing (unit-tested): $byref string -> box kind.
-pub fn byrefKindFromMarker(s: []const u8) ?ByrefKind {
-    if (s.len == 0) return .variant;
-    if (std.mem.eql(u8, s, "f8")) return .f8;
-    if (std.mem.eql(u8, s, "i4")) return .i4;
-    if (std.mem.eql(u8, s, "cy")) return .cy;
-    if (std.mem.eql(u8, s, "i8")) return .i8;
-    if (std.mem.eql(u8, s, "bstr")) return .bstr;
-    if (std.mem.eql(u8, s, "bool")) return .bool;
-    if (std.mem.eql(u8, s, "dispatch")) return .dispatch;
-    return null;
+/// Invoke options (collection read-back): `enumerate_ret` walks a
+/// VT_DISPATCH return value through the VB6 Collection contract
+/// (core/com/collection.zig) instead of surfacing "<dispatch>";
+/// `retain_ret` keeps an EXTRA reference to a VT_DISPATCH return in
+/// CallResult.ret_disp (caller Releases; used by $collection input
+/// marshaling via BUSY's own GetCollectionObj).
+pub const InvokeOpts = struct { enumerate_ret: bool = false, retain_ret: bool = false };
+
+pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
+    return self.invokeEx(method, args, .{});
 }
 
 /// Invoke method by name. JSON args are mapped to Variant params.
@@ -71,7 +75,7 @@ pub fn byrefKindFromMarker(s: []const u8) ?ByrefKind {
 /// Typed/Variant post-call values are returned in `outs`. Typed box
 /// read-back: bstr -> string ("" when the callee wrote none; the BSTR
 /// is freed), bool -> boolean, dispatch -> "<dispatch>" (released) or "".
-pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
+pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, opts: InvokeOpts) !CallResult {
     const d = self.disp orelse return error.NoDispatch;
     var wname: [256]u16 = undefined;
     _ = try self.toWideFixed(method, &wname);
@@ -109,6 +113,10 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
     defer self.alloc.free(boolbox);
     var dispbox = try self.alloc.alloc(?*win32.IDispatch, @intCast(n));
     defer self.alloc.free(dispbox);
+    // heap slots for $collection input args (typed VT_BYREF|VT_DISPATCH
+    // boxes; each holds an owned dispatch ref, freed via freeInboxes).
+    var inboxes = try self.alloc.alloc(?*?*win32.IDispatch, @intCast(n));
+    defer self.alloc.free(inboxes);
     for (0..@as(usize, @intCast(n))) |i| {
         storage[i] = VARIANT.init();
         byref_slots[i] = VARIANT.init();
@@ -120,12 +128,14 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
         bstrbox[i] = null;
         boolbox[i] = 0;
         dispbox[i] = null;
+        inboxes[i] = null;
     }
 
     // Fill in logical order; free on error.
     var filled: usize = 0;
     errdefer for (0..filled) |i| {
         if (!is_byref[i]) _ = VariantClear(&storage[i]) else _ = VariantClear(&byref_slots[i]);
+        freeInbox(self, &inboxes[i]);
     };
 
     for (0..@as(usize, @intCast(n))) |i| {
@@ -146,6 +156,28 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                     storage[i].vt = VT_DATE;
                     storage[i].data.dblVal = ole;
                     filled += 1;
+                    continue;
+                }
+                if (a.get("$collection")) |items| {
+                    // VB6 Collection INPUT argument (BUSY-004): BUSY's
+                    // own GetCollectionObj builds the Collection, we
+                    // Add the items, then pass it as a typed
+                    // VT_BYREF|VT_DISPATCH box — the shape a
+                    // `ByRef p_ICol As _Collection` typelib param takes
+                    // (byref-VARIANT got DISP_E_TYPEMISMATCH live).
+                    if (items.* != .arr) {
+                        self.setErr("$collection must be a JSON array of items", .{});
+                        return error.BadArgs;
+                    }
+                    const slot = try self.alloc.create(?*win32.IDispatch);
+                    slot.* = null;
+                    inboxes[i] = slot;
+                    filled += 1; // errdefer frees the slot on failure
+                    const cv = try marshal.inputCollection(self, items.arr);
+                    slot.* = @ptrCast(@alignCast(cv.data.pdispVal)); // ref transfers
+                    storage[i] = VARIANT.init();
+                    storage[i].vt = VT_BYREF | VT_DISPATCH;
+                    storage[i].data.byref = @ptrCast(slot);
                     continue;
                 }
                 if (a.get("$byref")) |inner| {
@@ -194,10 +226,10 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                             storage[i].data.byref = &boolbox[i];
                             byref_kind[i] = .bool;
                         },
-                        .dispatch => {
+                        .dispatch, .collection => {
                             storage[i].vt = VT_BYREF | VT_DISPATCH;
                             storage[i].data.byref = @ptrCast(&dispbox[i]);
-                            byref_kind[i] = .dispatch;
+                            byref_kind[i] = kind;
                         },
                     }
                     is_byref[i] = true;
@@ -244,12 +276,37 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                 _ = p.vtbl.Release(p);
                 dispbox[i] = null;
             }
+            freeInbox(self, &inboxes[i]);
         }
         if (hr == DISP_E_EXCEPTION) self.loadErrorInfo() else self.setErr("Invoke('{s}') failed 0x{x}", .{ method, @as(u32, @bitCast(hr)) });
         return error.InvokeFailed;
     }
 
-    const ret = try valueFromVariant(self, &result);
+    var ret: json.Value = undefined;
+    var ret_disp: ?*anyopaque = null;
+    if (opts.enumerate_ret and result.vt == VT_DISPATCH) {
+        // Collection-as-return (GetUserList / GetVchTypesForUserRights
+        // shape): enumerate via the VB6 Collection contract; the
+        // VariantClear below Releases the dispatch exactly once.
+        // Enumeration failure fails CLOSED ([]), the call succeeded.
+        if (result.data.pdispVal) |pv| {
+            const rd: *win32.IDispatch = @ptrCast(@alignCast(pv));
+            ret = collection.toJson(self, self.alloc, rd) catch json.Value{ .arr = &.{} };
+        } else {
+            ret = json.Value{ .arr = &.{} };
+        }
+    } else {
+        ret = try valueFromVariant(self, &result);
+    }
+    if (opts.retain_ret and result.vt == VT_DISPATCH) {
+        // Extra reference for the caller (inputCollection chaining);
+        // the VariantClear below still releases the ORIGINAL ref.
+        if (result.data.pdispVal) |pv| {
+            const rd: *win32.IDispatch = @ptrCast(@alignCast(pv));
+            _ = rd.vtbl.AddRef(rd);
+            ret_disp = rd;
+        }
+    }
     _ = VariantClear(&result);
 
     var outs: std.ArrayList(json.Value) = .empty;
@@ -258,7 +315,12 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
         outs.deinit(self.alloc);
     }
     for (0..@as(usize, @intCast(n))) |i| {
-        if (is_byref[i]) {
+        if (inboxes[i] != null) {
+            // $collection input: release the owned dispatch slot (the
+            // storage byref-variant is a no-op for VariantClear).
+            _ = VariantClear(&storage[i]);
+            freeInbox(self, &inboxes[i]);
+        } else if (is_byref[i]) {
             const v = switch (byref_kind[i]) {
                 .variant => blk: {
                     const vv = try valueFromVariant(self, &byref_slots[i]);
@@ -287,87 +349,38 @@ pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !Cal
                     dispbox[i] = null;
                     break :blk json.Value{ .str = try self.alloc.dupe(u8, "<dispatch>") };
                 },
+                .collection => blk: {
+                    // VB6 Collection contract (Count + 1-based Item):
+                    // enumerate into a JSON array, then Release exactly
+                    // once. Enumeration failure fails CLOSED (empty
+                    // array) - the call itself succeeded.
+                    const p = dispbox[i] orelse break :blk json.Value{ .arr = &.{} };
+                    defer {
+                        _ = p.vtbl.Release(p);
+                        dispbox[i] = null;
+                    }
+                    break :blk collection.toJson(self, self.alloc, p) catch json.Value{ .arr = &.{} };
+                },
             };
             try outs.append(self.alloc, v);
         } else {
             _ = VariantClear(&storage[i]);
         }
     }
-    return .{ .ret = ret, .outs = try outs.toOwnedSlice(self.alloc) };
+    return .{ .ret = ret, .outs = try outs.toOwnedSlice(self.alloc), .ret_disp = ret_disp };
 }
 
-pub fn variantFromValue(self: *Session, v: *const json.Value, out: *VARIANT) !void {
-    out.* = VARIANT.init();
-    switch (v.*) {
-        .null => {
-            out.vt = VT_NULL;
-        },
-        .bool => |b| {
-            out.vt = VT_BOOL;
-            out.data.boolVal = if (b) -1 else 0;
-        },
-        .int => |i| {
-            if (i >= std.math.minInt(i32) and i <= std.math.maxInt(i32)) {
-                out.vt = VT_I4;
-                out.data.lVal = @intCast(i);
-            } else {
-                out.vt = VT_I8;
-                out.data.llVal = i;
-            }
-        },
-        .float => |f| {
-            out.vt = VT_R8;
-            out.data.dblVal = f;
-        },
-        .str => |s| {
-            const wide = toUtf16(self.alloc, s) catch return error.OutOfMemory;
-            defer self.alloc.free(wide);
-            out.vt = VT_BSTR;
-            out.data.bstrVal = SysAllocString(wide.ptr);
-        },
-        .arr, .obj => return error.UnsupportedArgType,
-    }
-}
+// VARIANT<->JSON marshaling moved to marshal.zig (size-gate split);
+// re-exported here so existing call sites keep their imports.
+pub const variantFromValue = marshal.variantFromValue;
+pub const valueFromVariant = marshal.valueFromVariant;
 
-pub fn valueFromVariant(self: *Session, vv: *const VARIANT) !json.Value {
-    const vt = vv.vt & ~@as(u16, VT_BYREF);
-    if (vv.vt & VT_BYREF != 0) {
-        // only VT_BYREF|VT_VARIANT handled by caller; others: best effort
-        if (vt == VT_VARIANT) {
-            const inner: *const VARIANT = @ptrCast(@alignCast(vv.data.byref));
-            return valueFromVariant(self, inner);
-        }
-        return .null;
-    }
-    switch (vt) {
-        VT_EMPTY, VT_NULL => return .null,
-        VT_I2 => return .{ .int = @as(*align(1) const i16, @ptrCast(&vv.data.llVal)).* },
-        VT_I4, VT_INT, VT_HRESULT => return .{ .int = vv.data.lVal },
-        VT_UI4, VT_UINT => return .{ .int = vv.data.uintVal },
-        VT_I8 => return .{ .int = vv.data.llVal },
-        VT_R4 => return .{ .float = @as(*align(1) const f32, @ptrCast(&vv.data.llVal)).* },
-        VT_R8 => return .{ .float = vv.data.dblVal },
-        // OLE date (Tran1.Date etc.) — was silently .null before M1;
-        // BUSY's display format is DD/MM/YYYY.
-        VT_DATE => {
-            var b: [16]u8 = undefined;
-            return .{ .str = try self.alloc.dupe(u8, try helpers.oleDateToText(&b, vv.data.dblVal)) };
-        },
-        VT_BOOL => return .{ .bool = vv.data.boolVal != 0 },
-        VT_BSTR => {
-            const b = vv.data.bstrVal orelse return .null;
-            const len = SysStringLen(b);
-            const s = fromUtf16(self.alloc, b, len) catch return error.OutOfMemory;
-            return .{ .str = s };
-        },
-        VT_DISPATCH, VT_UNKNOWN => {
-            // owned copy: every .str must be allocator-owned (freeing a
-            // static literal corrupts the heap — found via
-            // GetAllVchSeriesCodes returning a dispatch collection)
-            return .{ .str = try self.alloc.dupe(u8, "<dispatch>") };
-        },
-        VT_ERROR => return .null,
-        else => return .null,
+/// Release + free a $collection input slot (owned dispatch ref).
+fn freeInbox(self: *Session, slot: *?*?*win32.IDispatch) void {
+    if (slot.*) |s| {
+        if (s.*) |d| _ = d.vtbl.Release(d);
+        self.alloc.destroy(s);
+        slot.* = null;
     }
 }
 
@@ -375,16 +388,4 @@ pub fn valueFromVariant(self: *Session, vv: *const VARIANT) !json.Value {
 
 const testing = std.testing;
 
-test "byrefKindFromMarker maps every $byref marker" {
-    try testing.expectEqual(ByrefKind.variant, byrefKindFromMarker("").?);
-    try testing.expectEqual(ByrefKind.f8, byrefKindFromMarker("f8").?);
-    try testing.expectEqual(ByrefKind.i4, byrefKindFromMarker("i4").?);
-    try testing.expectEqual(ByrefKind.cy, byrefKindFromMarker("cy").?);
-    try testing.expectEqual(ByrefKind.i8, byrefKindFromMarker("i8").?);
-    // iteration-5 typed VB6 ByRef (login/rights/write contracts):
-    try testing.expectEqual(ByrefKind.bstr, byrefKindFromMarker("bstr").?);
-    try testing.expectEqual(ByrefKind.bool, byrefKindFromMarker("bool").?);
-    try testing.expectEqual(ByrefKind.dispatch, byrefKindFromMarker("dispatch").?);
-    try testing.expect(null == byrefKindFromMarker("bogus"));
-    try testing.expect(null == byrefKindFromMarker("BSTr")); // case-sensitive
-}
+// Pure $byref marker tests live in markers.zig (split).

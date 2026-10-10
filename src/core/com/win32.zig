@@ -26,7 +26,8 @@ extern "bcrypt" fn BCryptGenRandom(
     dwFlags: u32,
 ) callconv(.winapi) i32;
 
-const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x2;
+pub extern "kernel32" fn LoadLibraryW(lpLibFileName: [*:0]const u16) callconv(.winapi) ?*anyopaque;
+pub const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x2;
 
 /// Fill `buf` with cryptographically secure random bytes
 /// (BCryptGenRandom, system-preferred RNG; Zig 0.17 removed

@@ -141,7 +141,10 @@ pub fn routeRaw(
             };
         }
 
-        var res = try ctx.sess.invoke(method, args);
+        // Collection read-back (BUSY-004/012): ?enumerate_ret=1 walks a
+        // VT_DISPATCH return through the VB6 Collection contract.
+        const enum_ret = (try sh.qparam(ralloc, query, "enumerate_ret")) != null;
+        var res = try ctx.sess.invokeEx(method, args, .{ .enumerate_ret = enum_ret });
         defer res.deinit(ctx.sess.alloc);
 
         if (fmt == .xml) {
