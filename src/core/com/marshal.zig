@@ -77,7 +77,24 @@ pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIA
 
     for (items) |*item| {
         var arg = VARIANT.init();
-        try variantFromValue(sess, item, &arg);
+        // Nested {"$date": ...} marker -> VT_DATE items (day-book date
+        // positions may demand typed dates, not strings).
+        if (item.* == .obj) {
+            if (item.get("$date")) |dv| {
+                const ole: f64 = switch (dv.*) {
+                    .str => |s| @import("../../util/helpers.zig").dateToOle(s) orelse return error.BadArgs,
+                    .int => |iv| @floatFromInt(iv),
+                    .float => |f| f,
+                    else => return error.BadArgs,
+                };
+                arg.vt = win32.VT_DATE;
+                arg.data.dblVal = ole;
+            } else {
+                try variantFromValue(sess, item, &arg);
+            }
+        } else {
+            try variantFromValue(sess, item, &arg);
+        }
         defer _ = VariantClear(&arg);
         // rgvarg reversal note: single-arg Add — order is moot.
         var added = collection_mod.dispInvoke(sess, disp, "Add", DISPATCH_METHOD, (&arg)[0..1]) catch |err| {
