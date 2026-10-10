@@ -44,6 +44,10 @@ pub const ConnCtx = struct {
     /// Bearer credential extracted per request ("" = none); the device
     /// gate in handleConn already ran. Feeds session verify + gates.
     user_token: []const u8 = "",
+    /// BUSY-012 enforcement: the verified user session for this request
+    /// (set by the /v1+/op session gate when armed; null = gate off or
+    /// no session). Report routes read its rights bits from here.
+    session_entry: ?*user_sessions.UserSession = null,
 };
 
 pub const Route = struct {

@@ -6,6 +6,20 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **BUSY-012 report enforcement shipped** (contract §5): when the
+  session gate is armed (`serve --require-session`), `GET
+  /v1/reports/{name}` and `GET /op/report/{name}` check the session's
+  stashed rights bits against a report name→repID map
+  (`rights.repIdForName`; `ledger` → 19 = Account Ledger, documented
+  in BUSY Functions.md). Unmapped reports **fail closed** (403
+  `rights_denied`) for non-super users; super passes. Login stashes a
+  compact `rights_all` + `report_mask` on the session (no per-request
+  COM); the gate-off dev posture is unchanged. New live suite
+  `tests/live/12-report-rights.ps1` (10 checks: admin passes,
+  user1 ledger 200 / day-book 403 on both surfaces, no-token 401,
+  gate-off open). Other report names map in via the GUI-grant assist
+  (grant to user1, re-sweep `CheckUserRightsForReports` — the flipped
+  ID is the report; probe §7/§15).
 - Collection **INPUT** marshaling (`$collection` marker — BUSY-004):
   `{"$collection":[...]}` sources a VB6 Collection from BUSY's own
   `GetCollectionObj` (CFixedInterface via transient aux — the runtime

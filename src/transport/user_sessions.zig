@@ -26,6 +26,10 @@ pub const UserSession = struct {
     fy: i64,
     created: i64, // unix seconds
     last_seen: i64,
+    /// BUSY-012 gating bits stashed at login (rights.resolve payload):
+    /// super flag + one bit per handlers/rights.rep_ids entry.
+    rights_all: bool = false,
+    report_mask: u32 = 0,
 
     fn deinit(self: *UserSession, alloc: Allocator) void {
         alloc.free(self.token);

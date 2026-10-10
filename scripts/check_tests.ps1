@@ -22,7 +22,8 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 # live only in the host replay binary (see check_replay.ps1, expects 29).
 # History: 82 (iteration-4) -> 83 (+byrefKindFromMarker, typed ByRef).
 # 89 -> 91 (+daybook.zig: oleDay, splitDrCr).
-$Expected = 91
+# 91 -> 93 (+rights.zig: repIdForName, canViewReport).
+$Expected = 93
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)

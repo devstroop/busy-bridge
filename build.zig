@@ -70,7 +70,10 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/replay.zig"),
         .target = b.graph.host,
     });
-    const replay_tests = b.addTest(.{ .root_module = replay_mod });
+    // Distinct artifact name: the two test binaries otherwise collide
+    // as test.exe in the same cache dir (last build wins) and
+    // check_replay's newest-file heuristic can misread the main suite.
+    const replay_tests = b.addTest(.{ .root_module = replay_mod, .name = "replay_test" });
     const run_replay = b.addRunArtifact(replay_tests);
     const replay_step = b.step("replay-test", "Run host-agnostic replay tests");
     replay_step.dependOn(&run_replay.step);

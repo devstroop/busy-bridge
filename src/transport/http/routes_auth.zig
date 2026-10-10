@@ -140,6 +140,13 @@ fn login(ctx: ConnCtx, ralloc: Allocator, fmt: Format, body: []const u8) Route {
     };
     const is_super = isSuperUser(username.str, ctx.super_user);
     const rights = resolvedRights(ralloc, ctx.sess, username.str, is_super);
+    // BUSY-012 enforcement bits ride the session (contract §5 report
+    // gating): stash the compact form of the same rights payload.
+    if (ctx.us.verify(token, nowSecs())) |se| {
+        const bits = ops.rights.bitsFromJson(&rights);
+        se.rights_all = bits.all;
+        se.report_mask = bits.mask;
+    }
     return loginResult(ralloc, fmt, token, username.str, comp.str, fy, rights, config) catch |err| {
         return deny(ralloc, fmt, "500 Internal Server Error", "internal", @errorName(err));
     };

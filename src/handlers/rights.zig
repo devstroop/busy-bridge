@@ -80,6 +80,55 @@ pub fn denyAll(alloc: Allocator) !json.Value {
     return common.objFrom(alloc, &e);
 }
 
+/// BUSY-012 enforcement map: our normalized report names -> BUSY
+/// repIDs. Only PROVEN mappings ship (sparse repID space; probe §7 +
+/// BUSY Functions.md): `ledger` is BUSY's Account Ledger (repID 19 —
+/// also the live-granted report for user1). Unmapped names fail
+/// closed for non-super users; extend via the GUI-grant assist (grant
+/// the report to user1 in the BUSY user-rights screen, re-sweep
+/// `CheckUserRightsForReports` — the flipped ID is the report).
+pub fn repIdForName(name: []const u8) ?i64 {
+    if (std.ascii.eqlIgnoreCase(name, "ledger")) return 19; // Account Ledger
+    return null;
+}
+
+/// Compact per-session rights for request gating (contract §3 subset,
+/// stashed at login): super flag + one bit per rep_ids entry.
+pub const RightsBits = struct {
+    all: bool = false,
+    mask: u32 = 0,
+};
+
+/// Extract gating bits from a resolved-rights JSON value (the same
+/// payload `/auth/login` and `/auth/me` return under "rights").
+pub fn bitsFromJson(rights: *const json.Value) RightsBits {
+    var b = RightsBits{};
+    if (rights.get("all")) |v| {
+        if (v.* == .bool) b.all = v.bool;
+    }
+    const reports = rights.get("reports") orelse return b;
+    for (rep_ids, 0..) |id, i| {
+        var kb: [8]u8 = undefined;
+        const key = std.fmt.bufPrint(&kb, "{d}", .{id}) catch continue;
+        if (reports.get(key)) |v| {
+            if (v.* == .bool and v.bool) b.mask |= @as(u32, 1) << @intCast(i);
+        }
+    }
+    return b;
+}
+
+/// May this session view the named report? Super users always; others
+/// only when the report maps to a granted repID (unmapped ⇒ deny,
+/// contract §3 fail-closed).
+pub fn canViewReport(b: RightsBits, name: []const u8) bool {
+    if (b.all) return true;
+    const id = repIdForName(name) orelse return false;
+    for (rep_ids, 0..) |rid, i| {
+        if (rid == id) return (b.mask & (@as(u32, 1) << @intCast(i))) != 0;
+    }
+    return false;
+}
+
 /// One `CheckUserRightsForReports` call: true = may view report `id`.
 fn checkReport(aux: *busyc.Session, sess: *busyc.Session, user: []const u8, id: i64) !bool {
     var arg: [7]json.Value = undefined;
@@ -129,4 +178,25 @@ test "denyAll is fully closed" {
     try testing.expectEqual(@as(usize, 0), v.get("reports").?.obj.len);
     try testing.expectEqual(@as(usize, 0), v.get("voucher_types").?.obj.len);
     try testing.expectEqual(@as(?bool, false), v.get("can_authorise").?.bool);
+}
+
+test "repIdForName: ledger maps to Account Ledger 19, else fail closed" {
+    try testing.expectEqual(@as(?i64, 19), repIdForName("ledger"));
+    try testing.expectEqual(@as(?i64, 19), repIdForName("LEDGER"));
+    try testing.expect(repIdForName("day-book") == null);
+    try testing.expect(repIdForName("trial-balance") == null);
+    try testing.expect(repIdForName("") == null);
+}
+
+test "canViewReport gates by bits and denies unmapped reports" {
+    // super: everything
+    try testing.expect(canViewReport(.{ .all = true }, "day-book"));
+    // user1-like bits: repID 19 granted (index of 19 in rep_ids)
+    var granted = RightsBits{};
+    for (rep_ids, 0..) |id, i| {
+        if (id == 19) granted.mask = @as(u32, 1) << @intCast(i);
+    }
+    try testing.expect(canViewReport(granted, "ledger"));
+    try testing.expect(!canViewReport(granted, "day-book")); // unmapped
+    try testing.expect(!canViewReport(.{}, "ledger")); // no bits
 }
