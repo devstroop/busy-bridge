@@ -32,6 +32,7 @@ test "test aggregation for handler children" {
     _ = @import("handlers/exec.zig");
     _ = @import("handlers/batch.zig");
     _ = @import("handlers/reports.zig");
+    _ = @import("handlers/daybook.zig");
     _ = @import("handlers/catalog.zig");
     _ = @import("handlers/rights.zig"); // BUSY-012 per-user rights (pure suites)
 }

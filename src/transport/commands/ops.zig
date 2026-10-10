@@ -160,14 +160,14 @@ pub fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
 /// JSON args object — one validation path (reports.zig) for CLI + HTTP.
 fn cmdOpReport(io: Io, alloc: Allocator, cli: Cli, fmt: Format, pos: []const []const u8) !u8 {
     if (pos.len < 2)
-        return fail(io, alloc, fmt, "bad_args", "op report needs a name: account-balance | group-balance | trial-balance | stock-status");
+        return fail(io, alloc, fmt, "bad_args", "op report needs a name: account-balance | group-balance | trial-balance | stock-status | day-book | ledger");
     const report = pos[1];
 
     var entries: std.ArrayList(json.Value.Entry) = .empty;
     var args_owned = false;
     var args: json.Value = .{ .null = {} };
     defer if (args_owned) args.deinit(alloc);
-    const str_flags = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q" };
+    const str_flags = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q", "type", "party" };
     for (str_flags) |f| {
         var flag_buf: [24]u8 = undefined;
         const flag = std.fmt.bufPrint(&flag_buf, "--{s}", .{f}) catch continue;
