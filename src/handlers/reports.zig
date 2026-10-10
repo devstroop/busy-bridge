@@ -10,6 +10,7 @@ const constants = @import("../core/constants.zig");
 const com = @import("../core/com.zig");
 const common = @import("common.zig");
 const masters = @import("masters.zig");
+const daybook = @import("daybook.zig");
 
 const Allocator = std.mem.Allocator;
 const Session = com.Session;
@@ -52,8 +53,34 @@ pub fn run(sess: *Session, alloc: Allocator, report: []const u8, args: *const js
         const item: ?[]const u8 = if (args.get("item")) |iv| (if (iv.* == .str) iv.str else null) else null;
         return stockStatus(sess, alloc, date, limit, q, item);
     }
-    sess.setErr("unknown report '{s}' (account-balance | group-balance | trial-balance | stock-status)", .{report});
+    // SQL-backed transaction reports (probe §13): day-book + ledger.
+    if (std.mem.eql(u8, report, "day-book")) {
+        const from = try requireDate(sess, args, "from", "day-book requires \"from\" (YYYY-MM-DD)");
+        const to = try requireDate(sess, args, "to", "day-book requires \"to\" (YYYY-MM-DD)");
+        const type_name: ?[]const u8 = if (args.get("type")) |tv| (if (tv.* == .str) tv.str else null) else null;
+        const party: ?[]const u8 = if (args.get("party")) |pv| (if (pv.* == .str) pv.str else null) else null;
+        return daybook.dayBook(sess, alloc, .{ .from = from, .to = to, .type_name = type_name, .party = party, .limit = try reportLimit(sess, args) });
+    }
+    if (std.mem.eql(u8, report, "ledger")) {
+        const name = try masters.requireStr(sess, args, "name", "ledger requires \"name\" (account)");
+        const from = try requireDate(sess, args, "from", "ledger requires \"from\" (YYYY-MM-DD)");
+        const to = try requireDate(sess, args, "to", "ledger requires \"to\" (YYYY-MM-DD)");
+        return daybook.ledger(sess, alloc, name, from, to, try reportLimit(sess, args));
+    }
+    sess.setErr("unknown report '{s}' (account-balance | group-balance | trial-balance | stock-status | day-book | ledger)", .{report});
     return error.BadArgs;
+}
+
+/// Shared `limit` flag (default 100, 0 = unlimited).
+fn reportLimit(sess: *Session, args: *const json.Value) !usize {
+    if (args.get("limit")) |l| {
+        if (l.* != .int or l.int < 0) {
+            sess.setErr("\"limit\" must be a non-negative integer (0 = unlimited)", .{});
+            return error.BadArgs;
+        }
+        return @intCast(l.int);
+    }
+    return 100;
 }
 
 /// Validate a date field (ISO / DD-MM-YYYY / DD/MM/YYYY). Returns the

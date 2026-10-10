@@ -159,6 +159,21 @@ pub const all = [_]Op{
         .params = "date, item? (exact), q? (substring), limit (default 100, 0 = unlimited)",
         .summary = "per-item main/alt quantity on hand at a date (GetItemValue)",
     },
+    // ---- transaction reports (SQL-backed, probe §13) ----
+    .{
+        .name = "day-book",
+        .route = "GET /op/report/day-book",
+        .cli = "op report day-book --from D --to D [--type T] [--party P]",
+        .params = "from, to (YYYY-MM-DD), type? (canonical name, e.g. sale), party? (account name), limit (default 100, 0 = unlimited)",
+        .summary = "vouchers in a period, each with account lines + debit/credit totals (Tran1+Tran2)",
+    },
+    .{
+        .name = "ledger",
+        .route = "GET /op/report/ledger",
+        .cli = "op report ledger --name X --from D --to D",
+        .params = "name (account), from, to, limit (default 100, 0 = unlimited)",
+        .summary = "one account's rows in a period with running balance; value/balance signed negative = debit (BUSY convention)",
+    },
 };
 
 pub fn find(name: []const u8) ?*const Op {

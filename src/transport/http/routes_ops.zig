@@ -187,7 +187,7 @@ pub fn routeOps(
         if (report.len == 0)
             return sh.badReq(ralloc, fmt, "bad_args", "missing report name (see GET /op)");
         var entries: std.ArrayList(json.Value.Entry) = .empty;
-        const str_params = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q" };
+        const str_params = [_][]const u8{ "name", "group", "item", "from", "to", "date", "q", "type", "party" };
         for (str_params) |p| {
             if (try sh.qparam(ralloc, query, p)) |v| try ops.common.put(ralloc, &entries, p, .{ .str = v });
         }
