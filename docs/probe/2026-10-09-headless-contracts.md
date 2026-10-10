@@ -559,6 +559,50 @@ re-sweep for user1 (repIDs 0–60, 195–205; admin as control) shows:
 | 203 | unidentified Bills item | not an app report name — stays unmapped (fail closed) |
 
 Admin: true across the whole sweep (super control, clean). The rights
+
+## 18. Iteration 18 — series-gate RECON: the JSON save's wall is the CS/mobile-user config, and its writers are UDT-blocked (2026-10-10)
+Phase-C recon for §14's remaining wall (`SaveVchFromJsonForOldMobileApp`
+→ `Invalid voucher series.` for every input). Findings, in order:
+
+- **The gate has a named predicate: `UserHasAccessToMobileApp(string)`
+  (`COtherServices1`) → `false` for EVERY identity** (Admin, user1,
+  Busy) on COMP0001 — and the companion **`IfVchSeriesBelongs2RestrictedUser`
+  (`CMasterServices`, series code) → `true` for EVERY series** (251
+  `02Main`, 252 `03Main`, 1290 `09ZigVch9`). The JSON save's error
+  correlates exactly with "no user has mobile-app access + every series
+  is restricted" — i.e. it reads the per-user mobile/CS-series config
+  that does not exist headless (§14's conclusion, now with the two
+  named predicates live-proven). `UserHaveAccess2Voucher(Variant)`
+  (1-arg, `CFixedInterface1`) answers `true` for Admin — a different,
+  non-discriminating check.
+- **The config's home is NOT `UserControl`**: full dump (common DB)
+  shows Admin/User1 × RecType{1,7} rows with every C/B/I/L column at
+  default (null/false/0) — no rights data. Guessed table names
+  (`UserRights`, `VchSeriesRights`, `MobileUsers`, …) do not exist in
+  the common DB (`SELECT` → `no_recordset`), and `MSysObjects` stays
+  blocked through BUSY's SQL layer.
+- **COM table enumerators are dead headless**: `GetAllTablesForDB`
+  (`CFixedInterface1`; Variant arg — `[""]`/`[0]`/`[1]`/`[true]`/… all
+  accepted) and `GetAllDBTablesWithRowCount` (proper `$collection`
+  markers) return **empty collections** in every shape tried.
+- **Direct DAO on the files is closed**: `db.bds`/`db12026.bds` are
+  renamed MDBs, but BUSY password-protects them — DAO 3.6 (CLSID
+  `{00000100-0000-0010-8000-00AA006D2EA4}`, instantiated from x86 PS via
+  `GetTypeFromCLSID`; the `DAO.DBEngine.35` ProgID does not exist on
+  this box, §13) rejects 8 password candidates. Tooling kept:
+  `tests/probe/dao-list-tables.ps1`.
+- **The write doors are UDT-blocked (→ iteration 19/B)**:
+  `ConfigMobileAppSeries` (`CFixedInterface1`) is declared
+  `Variant ConfigMobileAppSeries(Variant)` but its FUNCDESC decodes
+  **1 param `VT_PTR`→`VT_USERDEFINED` + return `VT_RECORD`** (§10-class
+  declaration red herring) — positional Variant shapes fail
+  `0x8002000F`/`0x8002000E` as expected. Sibling writers
+  (`SaveMobileAppConfig(udtCompConfig,…)`, `SaveVchSeriesGrpConfig(udtVchSeriesGrpConfig)`)
+  are explicitly UDT-typed. **`$record` input support (Phase B) is the
+  only headless unlock** for the JSON-save path; the operator-GUI
+  fixture (mobile user + series grant) remains the §14 option (a)
+  fallback. XML stays the production write path meanwhile.
+
 predicate ignores junk params (branch/mast-name variants — no name
 echo), so identification = grant-diff + attestation, not COM content.
 Bridge changes: `repIdForName` gains `day-book`→18; `rep_ids` = 21
