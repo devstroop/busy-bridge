@@ -131,6 +131,7 @@ pub fn cmdSurface(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             }
             w.raw("]") catch return 1;
             if (m.udt) |*u| @import("../../core/com/surface.zig").writeUdtJson(w, u) catch return 1;
+            if (m.ret_udt) |*u| @import("../../core/com/surface.zig").writeRetUdtJson(w, u) catch return 1;
             w.raw("}") catch return 1;
         }
         w.raw("]}") catch return 1;

@@ -47,6 +47,9 @@ pub const MemberDump = struct {
     /// UDT descriptor for entry0's VT_PTR->USERDEFINED param (the
     /// RepOpt/ICol-class types): name, size, field names.
     udt: ?@import("recordinfo.zig").UdtDesc = null,
+    /// Return-type UDT descriptor (fd bytes 32-39: hreftype + vt 29) —
+    /// udtAccMast/udtVchData returns carry the JSON save schema fields.
+    ret_udt: ?@import("recordinfo.zig").UdtDesc = null,
 
     pub const PtrDump = struct {
         off: usize = 0,
@@ -61,6 +64,7 @@ pub const MemberDump = struct {
 
     pub fn deinit(self: *MemberDump, alloc: Allocator) void {
         if (self.udt) |*u| u.deinit(alloc);
+        if (self.ret_udt) |*u| u.deinit(alloc);
         alloc.free(self.name);
     }
 };
@@ -118,6 +122,15 @@ pub fn dumpMemberTypes(self: *Session, alloc: Allocator, filter: []const u8) ![]
             const n = @min(64, FUNCDESC_SCAN);
             @memcpy(raw[0..n], src[0..n]);
             var dump = MemberDump{ .name = mname, .nparams = c_params, .fd_raw = raw, .fd_len = n };
+            // Return-type UDT decode (elemdescFunc: hreftype@32, vt@36;
+            // udtAccMast/udtVchData returns = the JSON save schema).
+            if (n >= 38) {
+                const rvt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(&raw) + 36)).*;
+                if (rvt == 29) {
+                    const rh: u32 = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(&raw) + 32)).*;
+                    dump.ret_udt = @import("recordinfo.zig").describeHreftype(self, alloc, info, rh) catch null;
+                }
+            }
             // Follow 4-byte pointer candidates (offsets 40..52) — the
             // param ELEMDESC array pointer lives in the FUNCDESC tail.
             var off: usize = 40;
@@ -254,6 +267,20 @@ pub fn surface(self: *Session, alloc: Allocator) ![]Member {
 pub fn writeUdtJson(w_in: anytype, u: *const @import("recordinfo.zig").UdtDesc) !void {
     var w = w_in; // writer methods need mutable self (call site w is const)
     try w.raw(",\"udt\":{\"name\":");
+    try w.str(u.name);
+    var nbuf: [96]u8 = undefined;
+    try w.raw(std.fmt.bufPrint(&nbuf, ",\"size\":{d},\"kind\":{d},\"htype\":{d},\"fields\":[", .{ u.size, u.kind, u.hreftype }) catch unreachable);
+    for (u.fields, 0..) |f, fi| {
+        if (fi != 0) try w.raw(",");
+        try w.str(std.fmt.bufPrint(&nbuf, "[\"{s}\",{d},{d}]", .{ f.name, f.off, f.vt }) catch unreachable);
+    }
+    try w.raw("]}");
+}
+
+/// Same, keyed `ret_udt` — the return-type UDT (JSON save schema).
+pub fn writeRetUdtJson(w_in: anytype, u: *const @import("recordinfo.zig").UdtDesc) !void {
+    var w = w_in;
+    try w.raw(",\"ret_udt\":{\"name\":");
     try w.str(u.name);
     var nbuf: [96]u8 = undefined;
     try w.raw(std.fmt.bufPrint(&nbuf, ",\"size\":{d},\"kind\":{d},\"htype\":{d},\"fields\":[", .{ u.size, u.kind, u.hreftype }) catch unreachable);
