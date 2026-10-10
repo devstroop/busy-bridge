@@ -521,6 +521,26 @@ marshals to null today; input records still 0x80020005 across 4 shapes
 
 - **Also landed**: `GetJSONFromRecordset(sql, {"$byref":"bstr"})` →
   BUSY's own canonical JSON (`{"JSON":[{<raw column names>, Date as
+
+## 16. Iteration 16 — raw-tier LOCKDOWN shipped (BUSY-013, contract §5 final tier)
+The contract §5 raw row is enforced: serve `--require-session` now locks
+`/call` and `/query` to an **admin session** (`rights_all`) unless the
+operator passes **`--allow-raw`** (device-tier posture). Verified live on
+COMP0001 (suite `tests/live/13-raw-tier.ps1`, 6 checks):
+
+| caller | /query POST (locked) | /query POST (--allow-raw) |
+|---|---|---|
+| no session | 401 | **200** (operator flag) |
+| user1 session | **403 `raw_tier_denied`** | 200 |
+| Admin session | **200** | 200 |
+
+Harness notes: GET /query is not a routed form (404) — POST with a JSON
+body; `ping` over GET /call returns 500 in this environment (COM context)
+— do not use it as a canary, SQL `SELECT 1` is the reliable probe. The
+serve boot line reports `"raw_tier":"open|operator|admin"` and /info's
+auth_mode stays `session`. Policy helper `rawAccess` is pure (suite in
+`http/shared.zig`, registered via `transport/format.zig`'s test-discovery
+block — transport tests are discovered ONLY through that chain).
   DD-MM-YYYY}]}`) — a native-shape oracle for any future schema
   work.
 

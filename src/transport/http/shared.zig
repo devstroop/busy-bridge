@@ -41,6 +41,9 @@ pub const ConnCtx = struct {
     /// When true, /v1 and /op require a valid user session (contract §5;
     /// raw /call /query stay device-tier until BUSY-013).
     require_session: bool,
+    /// BUSY-013: operator flag — raw /call,/query stay at device tier even
+    /// under --require-session. Without it, raw needs an admin session.
+    allow_raw: bool,
     /// Bearer credential extracted per request ("" = none); the device
     /// gate in handleConn already ran. Feeds session verify + gates.
     user_token: []const u8 = "",
@@ -76,6 +79,31 @@ pub fn ctOf(fmt: Format) []const u8 {
 pub fn authMode(require_session: bool, token: ?[]const u8) []const u8 {
     if (require_session) return "session";
     return if (token != null) "token" else "off";
+}
+
+/// BUSY-013 raw tier: /call,/query are COM/SQL escape hatches — under
+/// --require-session they need the operator flag (device tier) or an
+/// admin session; ordinary sessions and bare device tokens never reach
+/// raw. Gate-off (dev posture) stays open. Pure for tests.
+pub const RawAccess = enum { open, unauthorized, forbidden };
+pub fn rawAccess(require_session: bool, allow_raw: bool, session_found: bool, admin: bool) RawAccess {
+    if (!require_session) return .open;
+    if (allow_raw) return .open;
+    if (!session_found) return .unauthorized;
+    return if (admin) .open else .forbidden;
+}
+
+test "rawAccess: BUSY-013 operator flag or admin session" {
+    // Gate off (dev posture): raw open at device tier.
+    try std.testing.expectEqual(RawAccess.open, rawAccess(false, false, false, false));
+    // Operator flag: open at device tier (session irrelevant).
+    try std.testing.expectEqual(RawAccess.open, rawAccess(true, true, false, false));
+    // Locked down, no session (bare device token): blocked upstream.
+    try std.testing.expectEqual(RawAccess.unauthorized, rawAccess(true, false, false, false));
+    // Locked down, ordinary session: never raw.
+    try std.testing.expectEqual(RawAccess.forbidden, rawAccess(true, false, true, false));
+    // Locked down, admin session: open.
+    try std.testing.expectEqual(RawAccess.open, rawAccess(true, false, true, true));
 }
 
 /// Percent-decoded query parameter lookup (arena-owned result).
