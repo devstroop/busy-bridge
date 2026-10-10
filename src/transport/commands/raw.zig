@@ -107,13 +107,29 @@ pub fn cmdSurface(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             if (i != 0) w.raw(",") catch return 1;
             w.raw("{\"name\":") catch return 1;
             w.str(m.name) catch return 1;
-            var nbuf: [24]u8 = undefined;
+            var nbuf: [32]u8 = undefined;
             w.raw(std.fmt.bufPrint(&nbuf, ",\"nparams\":{d},\"fd_hex\":\"", .{m.nparams}) catch unreachable) catch return 1;
             const hex = "0123456789abcdef";
             for (m.fd_raw[0..m.fd_len]) |b| {
                 w.raw(&.{ hex[b >> 4], hex[b & 0xf] }) catch return 1;
             }
-            w.raw("\"}") catch return 1;
+            w.raw("\",\"ptrs\":[") catch return 1;
+            for (m.ptrs[0..m.nptrs], 0..) |pt, j| {
+                if (j != 0) w.raw(",") catch return 1;
+                w.raw(std.fmt.bufPrint(&nbuf, "{{\"off\":{d},\"hex\":\"", .{pt.off}) catch unreachable) catch return 1;
+                for (pt.raw[0..96]) |b| {
+                    w.raw(&.{ hex[b >> 4], hex[b & 0xf] }) catch return 1;
+                }
+                w.raw("\"") catch return 1;
+                if (pt.has_sub) {
+                    w.raw(",\"sub\":\"") catch return 1;
+                    for (pt.sub_hex[0..16]) |b| {
+                        w.raw(&.{ hex[b >> 4], hex[b & 0xf] }) catch return 1;
+                    }
+                }
+                w.raw("}") catch return 1;
+            }
+            w.raw("]}") catch return 1;
         }
         w.raw("]}") catch return 1;
         try printOut(io, alloc, out.items);

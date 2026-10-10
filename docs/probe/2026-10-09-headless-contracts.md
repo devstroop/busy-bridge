@@ -331,6 +331,32 @@ RepOpt builder) or BUSY-side docs for the JSON API. SDK samples
 workspace-wide (`BUSY Integration/.../Modules/*.bas`) only show SQL
 collection helpers (`FlushCol`), not the JSON getters.
 
+## 10. Iteration 10 — typelib depth-2 decode + $i2 (2026-10-10)
+
+`surface --types` grew pointer-following: 4-byte pointer candidates in
+the FUNCDESC tail (offsets 40–52) are probed via `VirtualQuery`
+(`IsBadReadPtr` itself AVs at 0x2e0000 — live-crashed, replaced) and
+their targets dumped (96 bytes) with one level of `VT_PTR` subtype
+following. Decoded:
+
+- **`p_ICol` = `VT_BYREF → VT_USERDEFINED`** — the typelib formally
+  declares the ByRef user-defined type (the `_Collection` interface);
+  our typed `VT_BYREF|VT_DISPATCH` box is the correct wire shape
+  (DispInvoke coerces) — the working day-book/ledger calls confirm.
+- `p_Err` = BSTR (write-back via our typed bstr box ✓);
+  `p_PartialData`/`p_PartialStartDate` show as VT_NULL/optional-Variant
+  — plain byval scalars coerce (live-proven).
+- **`GetRepOptValues(p_Repopt, p_RepID, p_RepType, p_Options,
+  p_FormatName)`** (CFixedInterface1): `p_RepID` is **VT_I2 (Short)** —
+  VT_I4 mismatches (new `$i2` marker added for VB6 Short inputs);
+  `p_RepOpt` decodes as VT_USERDEFINED ByRef — almost certainly a
+  **UDT** (`udtRepOpt*` family exists in the typelib) — headless use
+  needs the UDT layout (cbSizeInstance/elements dumpable via TYPEATTR
+  in a future `--types` extension). GetRepOptValues remains
+  DISP_E_TYPEMISMATCH after the I2 fix → the RepOpt route is
+  UDT-blocked; the JSON-getter item positions stay unpinned pending
+  either the UDT layout work or BUSY-side API docs.
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user

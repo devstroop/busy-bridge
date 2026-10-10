@@ -27,6 +27,27 @@ extern "bcrypt" fn BCryptGenRandom(
 ) callconv(.winapi) i32;
 
 pub extern "kernel32" fn LoadLibraryW(lpLibFileName: [*:0]const u16) callconv(.winapi) ?*anyopaque;
+pub extern "kernel32" fn VirtualQuery(lpAddress: ?*const anyopaque, lpBuffer: ?*MemoryBasicInformation, dwLength: usize) callconv(.winapi) usize;
+
+pub const MemoryBasicInformation = extern struct {
+    BaseAddress: ?*anyopaque,
+    AllocationBase: ?*anyopaque,
+    AllocationProtect: u32,
+    RegionSize: usize,
+    State: u32,
+    Protect: u32,
+    Type: u32,
+};
+
+pub const MEM_COMMIT: u32 = 0x1000;
+
+/// Safe readability probe (VirtualQuery — IsBadReadPtr itself AVs on
+/// some address ranges, live-crashed).
+pub fn readable(p: ?*const anyopaque) bool {
+    var mbi: MemoryBasicInformation = undefined;
+    const n = VirtualQuery(p, &mbi, @sizeOf(MemoryBasicInformation));
+    return n != 0 and mbi.State == MEM_COMMIT;
+}
 pub const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x2;
 
 /// Fill `buf` with cryptographically secure random bytes
