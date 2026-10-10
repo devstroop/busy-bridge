@@ -6,6 +6,18 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **Report-name map extended: `day-book` → repID 18** (GUI-grant assist
+  executed): live `CheckUserRightsForReports` re-sweep of user1 (0–60 +
+  195–205) shows the granted set **{18, 19, 201, 203}** vs §7's all-false
+  baseline (admin: all true — control). Operator-attested names: Day
+  Book, Account Ledger (19, known), Bills Rec/Pay (201, Functions.md
+  anchor) and one other Bills item (203, not an app name — stays
+  unmapped/fail-closed). `rep_ids` gains 18/203 (len 21; bitmask stays
+  positional); tests extended (same count, 94). Live suite
+  `12-report-rights.ps1` matrix updated: **user1 day-book → 200 on both
+  surfaces**; unmapped trial-balance remains the fail-closed 403 proof.
+  The rights predicate ignores junk params (no name echo — probed);
+  identification rests on grant-diff + operator attestation.
 - **BUSY-013 raw-tier lockdown shipped** (contract §5 final tier): under
   `serve --require-session`, `/call` and `/query` (COM/SQL escape hatches)
   now require the operator flag **`--allow-raw`** (device-tier posture) or

@@ -544,6 +544,30 @@ block — transport tests are discovered ONLY through that chain).
   DD-MM-YYYY}]}`) — a native-shape oracle for any future schema
   work.
 
+
+## 17. Iteration 17 — report-name map EXTENDED (day-book = 18, GUI-grant assist)
+The §15 extension procedure ran end-to-end: operator granted reports in
+the BUSY GUI user-rights screen (Day Book, Account Ledger, Bills
+Rec/Pay + one other Bills item), then a live `CheckUserRightsForReports`
+re-sweep for user1 (repIDs 0–60, 195–205; admin as control) shows:
+
+| repID | identity | provenance |
+|---|---|---|
+| 18 | **Day Book** | grant-diff vs §7 all-false baseline + operator attestation (sits immediately before Account Ledger in ID space) |
+| 19 | Account Ledger | documented anchor (Functions.md) + prior live proof |
+| 201 | Bills Rec/Pay | documented anchor (Functions.md `GetAttachmentPathForEmailQuery`) |
+| 203 | unidentified Bills item | not an app report name — stays unmapped (fail closed) |
+
+Admin: true across the whole sweep (super control, clean). The rights
+predicate ignores junk params (branch/mast-name variants — no name
+echo), so identification = grant-diff + attestation, not COM content.
+Bridge changes: `repIdForName` gains `day-book`→18; `rep_ids` = 21
+entries (18 + 203 added, bitmask positional — login stash and gating
+realign automatically). Live 12-suite: **user1 day-book → 200 on both
+surfaces**; unmapped trial-balance stays the fail-closed 403 proof.
+App-report mapping status: ledger ✓ day-book ✓; trial-balance,
+stock-status, balances remain unmapped (admin-only) until granted +
+swept.
 ## 15. Iteration 15 — report-rights MIDDLEWARE shipped (BUSY-012, contract §5)
 
 Enforcement for the named-report surfaces, riding the existing
