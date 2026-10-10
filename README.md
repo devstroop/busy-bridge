@@ -133,7 +133,7 @@ The product surface for apps: resource-style paths over the same ops as
 | `GET /v1/vouchers/{code}` | — | one by `VchCode` |
 | `POST /v1/vouchers` | JSON body | post (same body as `/op` post-voucher) |
 | `DELETE /v1/vouchers/{code}` | — | delete |
-| `GET /v1/reports/{name}?…` | — | named reports (account-balance, group-balance, trial-balance, stock-status) |
+| `GET /v1/reports/{name}?…` | — | named reports (account-balance, group-balance, trial-balance, stock-status, day-book, ledger) |
 
 List results carry a page envelope:
 
