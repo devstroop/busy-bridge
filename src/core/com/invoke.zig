@@ -123,6 +123,9 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
     // boxes; each holds an owned dispatch ref, freed via freeInboxes).
     var inboxes = try self.alloc.alloc(?*?*win32.IDispatch, @intCast(n));
     defer self.alloc.free(inboxes);
+    // heap boxes for $record input args (VT_RECORD UDT payloads).
+    var recboxes = try self.alloc.alloc(?*marshal.RecBox, @intCast(n));
+    defer self.alloc.free(recboxes);
     for (0..@as(usize, @intCast(n))) |i| {
         storage[i] = VARIANT.init();
         byref_slots[i] = VARIANT.init();
@@ -135,13 +138,15 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
         boolbox[i] = 0;
         dispbox[i] = null;
         inboxes[i] = null;
+        recboxes[i] = null;
     }
 
     // Fill in logical order; free on error.
     var filled: usize = 0;
     errdefer for (0..filled) |i| {
-        if (!is_byref[i]) _ = VariantClear(&storage[i]) else _ = VariantClear(&byref_slots[i]);
+        if (!is_byref[i]) clearStorageVar(&storage[i]) else _ = VariantClear(&byref_slots[i]);
         freeInbox(self, &inboxes[i]);
+        freeRecBox(self, &recboxes[i]);
     };
 
     for (0..@as(usize, @intCast(n))) |i| {
@@ -165,7 +170,7 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
                     continue;
                 }
                 var handled = false;
-                try marshal.fillInputMarker(self, storage, inboxes, &filled, i, &a, &handled);
+                try marshal.fillInputMarker(self, storage, inboxes, recboxes, &filled, i, &a, &handled);
                 if (handled) continue;
                 if (a.get("$byref")) |inner| {
                     // Typed box marker (services-class typed params) or
@@ -264,6 +269,7 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
                 dispbox[i] = null;
             }
             freeInbox(self, &inboxes[i]);
+            freeRecBox(self, &recboxes[i]);
         }
         if (hr == DISP_E_EXCEPTION) self.loadErrorInfo() else self.setErr("Invoke('{s}') failed 0x{x}", .{ method, @as(u32, @bitCast(hr)) });
         return error.InvokeFailed;
@@ -302,11 +308,13 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
         outs.deinit(self.alloc);
     }
     for (0..@as(usize, @intCast(n))) |i| {
-        if (inboxes[i] != null) {
-            // $collection input: release the owned dispatch slot (the
-            // storage byref-variant is a no-op for VariantClear).
-            _ = VariantClear(&storage[i]);
+        if (inboxes[i] != null or recboxes[i] != null) {
+            // $collection/$record input: free the owned payload (the
+            // byref-dispatch clear is a no-op; VT_RECORD frees via
+            // RecBox — see clearStorageVar).
+            clearStorageVar(&storage[i]);
             freeInbox(self, &inboxes[i]);
+            freeRecBox(self, &recboxes[i]);
         } else if (is_byref[i]) {
             const v = switch (byref_kind[i]) {
                 .variant => blk: {
@@ -350,9 +358,7 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
                 },
             };
             try outs.append(self.alloc, v);
-        } else {
-            _ = VariantClear(&storage[i]);
-        }
+        } else clearStorageVar(&storage[i]);
     }
     return .{ .ret = ret, .outs = try outs.toOwnedSlice(self.alloc), .ret_disp = ret_disp };
 }
@@ -369,6 +375,22 @@ fn freeInbox(self: *Session, slot: *?*?*win32.IDispatch) void {
         self.alloc.destroy(s);
         slot.* = null;
     }
+}
+
+/// Release + free a $record input box (VT_RECORD payload).
+fn freeRecBox(self: *Session, slot: *?*marshal.RecBox) void {
+    if (slot.*) |rb| {
+        rb.destroy(self.alloc);
+        self.alloc.destroy(rb);
+        slot.* = null;
+    }
+}
+
+/// VariantClear except VT_RECORD variants (those free via RecBox —
+/// VariantClear would call RecordClear through trap-thunked vtable).
+fn clearStorageVar(v: *VARIANT) void {
+    if (v.vt == win32.VT_RECORD or v.vt == (win32.VT_BYREF | win32.VT_RECORD)) return;
+    _ = VariantClear(v);
 }
 
 // ---------------- tests (pure) ----------------

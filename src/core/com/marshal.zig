@@ -2,6 +2,7 @@
 //! the single mapping both directions for COM arguments, results, and
 //! out-params. Re-exported via invoke.zig for existing call sites.
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const json = @import("../../util/json.zig");
 const helpers = @import("../../util/helpers.zig");
 const Session = @import("session.zig").Session;
@@ -41,13 +42,25 @@ const registry = @import("../registry.zig");
 
 const DISPATCH_METHOD: u32 = 0x1;
 
+/// A record arg's owned payload (the hand-built UDT buffer; freed
+/// after the invoke — BSTR fields inside are process-lifetime for now).
+pub const RecBox = struct {
+    buf: [*]u8,
+    size: u32,
+    pub fn destroy(self: *RecBox, alloc: Allocator) void {
+        alloc.free(self.buf[0..self.size]);
+    }
+};
+
 /// Input-arg markers handled in the invoke loop (split for the size
-/// gate): `{"$i2": n}` (VB6 Short) and `{"$collection": [...]}` (typed
-/// ByRef _Collection box). Sets `handled` when the arg was consumed.
+/// gate): `{"$i2": n}` (VB6 Short), `{"$collection": [...]}` (typed
+/// ByRef _Collection box), `{"$record": {type,fields}}` (VT_RECORD
+/// UDT instance via IRecordInfo). Sets `handled` when consumed.
 pub fn fillInputMarker(
     sess: *Session,
     storage: []VARIANT,
     inboxes: []?*?*win32.IDispatch,
+    recboxes: []?*RecBox,
     filled: *usize,
     i: usize,
     a: *const json.Value,
@@ -62,6 +75,30 @@ pub fn fillInputMarker(
         storage[i].vt = win32.VT_I2;
         storage[i].data.lVal = @intCast(if (iv.* == .int) iv.int else 0);
         filled.* += 1;
+        handled.* = true;
+        return;
+    }
+    if (a.get("$record")) |rd| {
+        // VT_RECORD UDT instance (udtRepOptions etc.): {"$record":
+        // {"htype":<hreftype from surface --types>,"fields":{...}}}
+        if (rd.* != .obj) {
+            sess.setErr("$record must be an object with htype+fields", .{});
+            return error.BadArgs;
+        }
+        const ht = rd.get("htype") orelse return error.BadArgs;
+        const flds = rd.get("fields") orelse return error.BadArgs;
+        if (ht.* != .int) return error.BadArgs;
+        const rec = try @import("recordinfo.zig").recordFromHreftype(sess, sess.alloc, @intCast(ht.int), flds);
+        // VT_BYREF|VT_VARIANT -> inner VT_RECORD; the buffer is the
+        // inner pRecValue; size stashed in r2.
+        const boxv: *VARIANT = @ptrCast(@alignCast(rec.data.byref.?));
+        const buf: [*]u8 = @ptrCast(boxv.data.rec.pRecValue.?);
+        const rbsize: u32 = rec.r2;
+        const rb = try sess.alloc.create(RecBox);
+        rb.* = .{ .buf = buf, .size = rbsize };
+        recboxes[i] = rb;
+        filled.* += 1;
+        storage[i] = rec;
         handled.* = true;
         return;
     }
