@@ -278,9 +278,18 @@ BUSY-004's input side (`p_ICol` params) is solved
   (`"{}"` — COMP0001 has **0 vouchers**, `op list vouchers count=0`;
   row-level confirmation needs a company with data) with empty
   `p_Err`.
-- **Positional layout beyond item 3 unconfirmed** (1/2 are consumed
-  without date-parse errors but produce empty results; needs a
-  data-bearing company to pin From/To/filter positions).
+- **Positional layout beyond item 3 unconfirmed** — swept with a
+  DATA-bearing company (three vouchers created: journal 2026-04-05,
+  sale 2026-04-10 party=Zig Test Party, journal 2026-04-12):
+  date pairs (DD/MM strings, ISO, VT_DATE typed items) at positions
+  1-2 / 4-5 / 5-6 / 6-7 / 7-8 / 8-9 all still return `{}`; Admin
+  remains required at position 3 (rights identity). `p_PartialData`/
+  `p_PartialStartDate` variants change nothing. The day-book/ledger
+  layout is its own probe iteration (input item TYPES beyond VT_DATE
+  untested; `GetAccLedgerJSON`'s tail still DISP_E_TYPEMISMATCH across
+  variant/bool/f8/i4/bstr p_OpBal and p_Chk* shapes) — the collection
+  input marshaling itself is proven (all failures are BUSY-side
+  business results or param-type puzzles, never bridge marshaling).
 - Harness lessons recorded en route: PS5.1 mangles embedded double
   quotes in `--args` (use `--args-b64`); `ExpectString`/`UnexpectedChar`
   were OUR JSON parser (not BUSY — the args never reached COM);
