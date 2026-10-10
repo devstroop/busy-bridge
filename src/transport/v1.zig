@@ -270,7 +270,7 @@ fn routeInner(
         if (key == null or !eql(verb, "GET"))
             return errResult(alloc, fmt, "404", "not_found", "unknown /v1 route (see GET /v1)");
         var args: std.ArrayList(json.Value.Entry) = .empty;
-        for ([_][]const u8{ "name", "group", "from", "to", "date", "item", "q" }) |p| {
+        for ([_][]const u8{ "name", "group", "from", "to", "date", "item", "q", "type", "party" }) |p| {
             if (try qparam(alloc, query, p)) |val|
                 try ops.common.put(alloc, &args, p, .{ .str = val });
         }
