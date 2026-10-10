@@ -70,6 +70,7 @@ test "test aggregation for the build test root" {
     _ = @import("sessions.zig"); // issue #5 multi-company switcher (pure suites)
     _ = @import("user_sessions.zig"); // BUSY-010 user-session store (pure suites)
     _ = @import("http/routes_auth.zig"); // BUSY-011 super-user match (pure suite)
+    _ = @import("http/shared.zig"); // BUSY-013 raw-tier policy (pure suite)
     _ = @import("v1.zig"); // issue #7 /v1 facade (pure suites)
     _ = @import("format/wire.zig"); // issue #11 phase 3 split suites
     _ = @import("format/call.zig");

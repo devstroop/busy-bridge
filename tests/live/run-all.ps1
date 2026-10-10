@@ -16,6 +16,7 @@ $scripts = @(
     '10-multi-company.ps1',
     '11-v1.ps1',
     '12-report-rights.ps1'
+    '13-raw-tier.ps1'
 )
 $failed = 0
 foreach ($t in $scripts) {

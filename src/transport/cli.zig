@@ -44,6 +44,7 @@ pub const Usage =
     \\       [--token T]                                auth token (or BUSY_BRIDGE_TOKEN env);
     \\                                              non-loopback --host refuses without it
     \\       [--require-session]                        BUSY-011: /v1+/op need a user session
+    \\       [--allow-raw]                              BUSY-013: raw /call+/query stay device-tier under --require-session (else admin session)
     \\                                              (POST /auth/login; see docs/auth-contract.md)
     \\       [--super-user NAME]                        provisional full-rights identity
     \\                                              (default Admin; others deny-all)

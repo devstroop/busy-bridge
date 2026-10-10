@@ -46,6 +46,7 @@ const optsFrom = cli_mod.optsFrom;
 const errPayload = shared.errPayload;
 const ctOf = shared.ctOf;
 const qparam = shared.qparam;
+const rawAccess = shared.rawAccess; // BUSY-013 raw tier policy
 
 var serve_body_buf: [8 * 1024 * 1024]u8 = undefined;
 
@@ -186,8 +187,12 @@ fn route(
 
     // Session gate (contract §5, provisional enforcement): when armed,
     // the facade surfaces need a valid user session. Raw /call /query
-    // stay device-tier until BUSY-013 decides the operator boundary.
-    if (ctx.require_session and (startsWithCi(path, "/v1") or startsWithCi(path, "/op"))) {
+    // are BUSY-013: under --allow-raw they stay device-tier; without the
+    // flag they join the gate here (capture + 401) and route() enforces
+    // the admin-session check before raw dispatch.
+    if (ctx.require_session and (startsWithCi(path, "/v1") or startsWithCi(path, "/op") or
+        ((startsWithCi(path, "/call") or startsWithCi(path, "/query")) and !ctx.allow_raw)))
+    {
         if (ctx.us.verify(ctx.user_token, win32.unixSeconds())) |se| {
             ctx.session_entry = se; // BUSY-012 report gating reads this
         } else {
@@ -215,6 +220,25 @@ fn route(
     }
 
     if (try routes_ops.routeOps(ctx, ralloc, fmt, verb, path, query, body)) |r| return r;
+    // BUSY-013 raw tier: the gate above captured a session (or 401'd)
+    // when locked down; admin (rights_all) or the --allow-raw operator
+    // flag opens raw. Ordinary sessions never reach /call,/query.
+    if (ctx.require_session and (startsWithCi(path, "/call") or startsWithCi(path, "/query"))) {
+        const se = ctx.session_entry;
+        switch (rawAccess(ctx.require_session, ctx.allow_raw, se != null, if (se) |e| e.rights_all else false)) {
+            .open => {},
+            .unauthorized => return .{
+                .status = "401 Unauthorized",
+                .content_type = ctOf(fmt),
+                .payload = try errPayload(ralloc, fmt, "401", "session_required", "raw /call and /query need a user session or serve --allow-raw (BUSY-013)"),
+            },
+            .forbidden => return .{
+                .status = "403 Forbidden",
+                .content_type = ctOf(fmt),
+                .payload = try errPayload(ralloc, fmt, "403", "raw_tier_denied", "raw /call and /query require an admin session or serve --allow-raw"),
+            },
+        }
+    }
     if (try routes_raw.routeRaw(ctx, ralloc, fmt, verb, path, query, body, ctype)) |r| return r;
 
     return .{
@@ -310,6 +334,7 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
         };
     }
     const require_session = cli.flag("--require-session");
+    const allow_raw = cli.flag("--allow-raw"); // BUSY-013 operator flag
     const super_user = cli.getOr("--super-user", "Admin");
 
     const addr = try Io.net.IpAddress.parse(host, port);
@@ -318,10 +343,11 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
 
     const mode_wire = if (guard.mode == .read_only) "read-only" else @tagName(guard.mode);
     const auth_mode = if (require_session) "session" else if (token != null) "token" else "off";
+    const raw_tier = if (!require_session) "open" else if (allow_raw) "operator" else "admin";
     const boot = try std.fmt.allocPrint(alloc,
-        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s},"auth_mode":"{s}","multi_company":true}}
+        \\{{"ok":true,"listening":"{s}:{d}","prog_id":"{s}","company":"{s}","query_mode":"{s}","max_rows":{d},"auth":{s},"auth_mode":"{s}","raw_tier":"{s}","multi_company":true}}
         \\
-    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows, if (token != null) "true" else "false", auth_mode });
+    , .{ host, port, o.prog_id, o.comp orelse "(none)", mode_wire, guard.max_rows, if (token != null) "true" else "false", auth_mode, raw_tier });
     defer alloc.free(boot);
     try printOut(io, alloc, boot);
 
@@ -337,6 +363,7 @@ pub fn serve(io: Io, alloc: Allocator, cli: Cli) !u8 {
         .us = &us,
         .super_user = super_user,
         .require_session = require_session,
+        .allow_raw = allow_raw,
     };
     while (true) {
         var stream = server.accept(io) catch |err| {

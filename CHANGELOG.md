@@ -6,6 +6,17 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **BUSY-013 raw-tier lockdown shipped** (contract §5 final tier): under
+  `serve --require-session`, `/call` and `/query` (COM/SQL escape hatches)
+  now require the operator flag **`--allow-raw`** (device-tier posture) or
+  an **admin session** (`rights_all`); ordinary sessions and bare device
+  tokens get 403 `raw_tier_denied` / 401. Gate-off dev posture unchanged;
+  the boot line gains `"raw_tier":"open|operator|admin"`. Policy helper
+  `rawAccess` is pure (shared.zig suite — registered in format.zig's
+  discovery block; test 94). Live suite `tests/live/13-raw-tier.ps1`
+  (6 checks: lockdown + operator-flag postures; harness notes: POST
+  /query + body is the routed form, `ping` over GET /call 500s here —
+  use `SELECT 1` as the canary). Probe §16.
 - **BUSY-012 report enforcement shipped** (contract §5): when the
   session gate is armed (`serve --require-session`), `GET
   /v1/reports/{name}` and `GET /op/report/{name}` check the session's
