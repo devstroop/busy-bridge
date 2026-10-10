@@ -77,9 +77,21 @@ pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIA
 
     for (items) |*item| {
         var arg = VARIANT.init();
-        // Nested {"$date": ...} marker -> VT_DATE items (day-book date
-        // positions may demand typed dates, not strings).
-        if (item.* == .obj) {
+        var key_v = VARIANT.init();
+        var has_key = false;
+        defer _ = VariantClear(&arg);
+        defer _ = VariantClear(&key_v);
+        // Keyed pair form: ["value", "KEY"] or [{"$date":…}, "KEY"] ->
+        // Col.Add value, key (RepOpt-style named options: START_DATE/
+        // END_DATE/ACC_NAME…; positional-only collections were
+        // live-proven to yield {}).
+        if (item.* == .arr and item.arr.len == 2 and (item.arr[0] == .str or (item.arr[0] == .obj and item.arr[0].get("$date") != null)) and item.arr[1] == .str) {
+            try variantFromValue(sess, &item.arr[0], &arg);
+            try variantFromValue(sess, &item.arr[1], &key_v);
+            has_key = true;
+        } else if (item.* == .obj) {
+            // Nested {"$date": ...} marker -> VT_DATE items (day-book date
+            // positions may demand typed dates, not strings).
             if (item.get("$date")) |dv| {
                 const ole: f64 = switch (dv.*) {
                     .str => |s| @import("../../util/helpers.zig").dateToOle(s) orelse return error.BadArgs,
@@ -95,9 +107,9 @@ pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIA
         } else {
             try variantFromValue(sess, item, &arg);
         }
-        defer _ = VariantClear(&arg);
-        // rgvarg reversal note: single-arg Add — order is moot.
-        var added = collection_mod.dispInvoke(sess, disp, "Add", DISPATCH_METHOD, (&arg)[0..1]) catch |err| {
+        // rgvarg is reversed: pass [key, value] so Add sees (value, key).
+        const two: [2]VARIANT = .{ key_v, arg };
+        var added = collection_mod.dispInvoke(sess, disp, "Add", DISPATCH_METHOD, if (has_key) two[0..] else two[1..]) catch |err| {
             sess.setErr("Collection.Add failed: {s}", .{@errorName(err)});
             return err;
         };
