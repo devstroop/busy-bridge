@@ -420,6 +420,51 @@ both resolved to the same VB6 automation boundary:
   family); (b) code-segment literal dump for the ICol key strings;
   (c) operator-side BUSY API docs.
 
+## 13. Iteration 13 — environment repair: DAO 3.6 + the `--comp` flag trap (2026-10-10)
+
+A session-spanning "SQL layer is dead" scare turned out to be TWO
+independent problems stacked, both now fixed:
+
+- **DAO 3.6 COM registration was damaged** on the host (dao360.dll
+  present in `C:\Program Files (x86)\Common Files\Microsoft Shared\DAO\`
+  and in `C:\BusyWin\` but its CLSID `{00000100-0000-0010-8000-
+  00AA006D2EA4}` unregistered — likely an update/reinstall casualty;
+  BUSY ships its own copy). Fixed with
+  `SysWOW64\regsvr32.exe "...DAO\dao360.dll"` (rc=0). Note
+  **`DAO.DBEngine.35` does not exist anywhere on the box** (no
+  dao350.dll) — Rel 21 uses DAO **3.6**; probing 3.5 is a red herring.
+  Whether registration was strictly required for BUSY's in-proc DAO use
+  is unproven (fixed in the same window as the flag fix below), but the
+  registration state is now correct.
+- **The `--comp` flag trap** (harness lesson, bit us for hours): the CLI
+  recognizes only `--comp`; an unknown `--company` is **silently
+  ignored**, so `comp=null` → `openCompany` no-ops → `GetRecordset`
+  fails with "COM call failed (no IErrorInfo)" — identical to the DAO
+  symptom. The ad-hoc PS probe that "proved" DAO was broken had also
+  skipped `OpenDB` entirely; `GetRecordset` without an opened company
+  always throws `Item not found in this collection`. Always pass
+  `--comp`, and always `OpenDB(busy, data, comp)` before any SQL from a
+  script (3-arg form accepted; signature is
+  `OpenDB(p_BusyPath, p_DataPath, p_CompCode, p_FY)`).
+
+**With the environment healthy the SQL layer fully works**:
+`query --comp COMP0001 --sql "SELECT TOP 3 Code, Name FROM Master1"`
+→ real rows; `op list vouchers --comp COMP0001` → the three committed
+vouchers with full rows (journal 2026-04-05, sale 10/2026-27 party
+"Zig Test Party" code 1293, journal 2026-04-12). Headless COM
+`OpenDB` runs fine **alongside** the GUI holding the same company
+(reads; the documented contention risk is reopen/write scenarios).
+
+**`GetAccDayBookJSON` still returns `{}`** with the iteration-9 proven
+combo + real dates now that vouchers exist — so the JSON-getter
+emptiness is NOT an environment artifact; the ICol item positions
+beyond the min-counts remain the black box (§8/§9). **Recommendation
+landed**: the app's day-book/ledger reads should ship on the `op`/`query`
+layer (proven working); the JSON getters stay a nice-to-have probed in
+parallel with the record-shape hunt (`GetRepOpt()` returns VT_RECORD →
+marshals to null today; input records still 0x80020005 across 4 shapes
+— §12 option (a) continues).
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user
