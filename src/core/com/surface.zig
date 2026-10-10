@@ -249,7 +249,6 @@ pub fn surface(self: *Session, alloc: Allocator) ![]Member {
     return out.toOwnedSlice(alloc);
 }
 
-
 /// Write the `--types` UDT descriptor JSON fragment (fields as
 /// [name,off,vt] triples) — split from raw.zig (size gate).
 pub fn writeUdtJson(w_in: anytype, u: *const @import("recordinfo.zig").UdtDesc) !void {
