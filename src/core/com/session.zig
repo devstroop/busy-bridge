@@ -55,6 +55,13 @@ pub const Session = struct {
         return self.err_buf[0..self.err_len];
     }
 
+    /// Clear the sticky error (e.g. an expected NoSuchMember probe
+    /// before an aux fallback succeeded — leaving it set makes later
+    /// failText responses carry a stale message).
+    pub fn clearErr(self: *Session) void {
+        self.err_len = 0;
+    }
+
     /// Read description of last COM error (IErrorInfo) into err_buf.
     pub fn loadErrorInfo(self: *Session) void {
         var ei: ?*IErrorInfo = null;

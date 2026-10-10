@@ -77,8 +77,15 @@ fn itemAt(sess: *Session, disp: *win32.IDispatch, index: i32) !json.Value {
 
 const invoke_mod = @import("invoke.zig");
 
-/// Generic zero/one-arg property-get on an arbitrary dispatch.
-fn propertyGet(sess: *Session, disp: *win32.IDispatch, name: []const u8, arg: ?*VARIANT) !VARIANT {
+/// Generic dispatch member invoke (property-get or method) with 0/1
+/// VARIANT args — shared by the Collection walk and input marshaling.
+pub fn dispInvoke(
+    sess: *Session,
+    disp: *win32.IDispatch,
+    name: []const u8,
+    flags: u32,
+    args: []const VARIANT,
+) !VARIANT {
     var wname: [256]u16 = undefined;
     _ = try sess.toWideFixed(name, &wname);
     var names: [1][*:0]const u16 = .{@ptrCast(&wname)};
@@ -88,19 +95,25 @@ fn propertyGet(sess: *Session, disp: *win32.IDispatch, name: []const u8, arg: ?*
         sess.setErr("collection member '{s}' unknown (0x{x})", .{ name, @as(u32, @bitCast(hr)) });
         return error.NoSuchMember;
     }
-    var one = [_]VARIANT{if (arg) |a| a.* else VARIANT.init()};
     var dp = DISPPARAMS{
-        .rgvarg = if (arg != null) &one[0] else null,
+        .rgvarg = if (args.len > 0) @ptrCast(@constCast(args.ptr)) else null,
         .rgdispidNamedArgs = null,
-        .cArgs = if (arg != null) 1 else 0,
+        .cArgs = @intCast(args.len),
         .cNamedArgs = 0,
     };
     var res = VARIANT.init();
-    hr = disp.vtbl.Invoke(disp, dispid, &IID_NULL, DISPATCH_PROPERTYGET, 1, &dp, &res, null, null);
+    hr = disp.vtbl.Invoke(disp, dispid, &IID_NULL, flags, 1, &dp, &res, null, null);
     if (hr < 0) {
         _ = VariantClear(&res);
-        sess.setErr("collection {s} property-get failed 0x{x}", .{ name, @as(u32, @bitCast(hr)) });
+        sess.setErr("collection {s} invoke failed 0x{x}", .{ name, @as(u32, @bitCast(hr)) });
         return error.InvokeFailed;
     }
     return res;
+}
+
+/// Generic zero/one-arg property-get on an arbitrary dispatch.
+fn propertyGet(sess: *Session, disp: *win32.IDispatch, name: []const u8, arg: ?*VARIANT) !VARIANT {
+    var one = [_]VARIANT{if (arg) |a| a.* else VARIANT.init()};
+    const args: []const VARIANT = if (arg != null) one[0..1] else &.{};
+    return dispInvoke(sess, disp, name, DISPATCH_PROPERTYGET, args);
 }

@@ -10,6 +10,11 @@ const Allocator = std.mem.Allocator;
 pub const CallResult = struct {
     ret: json.Value,
     outs: []json.Value,
+    /// Retained VT_DISPATCH return (opts.retain_ret) — an ADDITIONAL
+    /// reference owned by the CALLER (deinit does not release it; the
+    /// caller Releases exactly once). anyopaque keeps this module
+    /// host-agnostic (IDispatch lives in win32.zig).
+    ret_disp: ?*anyopaque = null,
 
     pub fn deinit(self: *CallResult, alloc: Allocator) void {
         self.ret.deinit(alloc);

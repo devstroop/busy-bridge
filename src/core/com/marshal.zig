@@ -33,6 +33,61 @@ const VT_HRESULT = win32.VT_HRESULT;
 const VT_DISPATCH = win32.VT_DISPATCH;
 const VT_UNKNOWN = win32.VT_UNKNOWN;
 const VT_BYREF = win32.VT_BYREF;
+const CoCreateInstance = win32.CoCreateInstance;
+const CLSIDFromProgID = win32.CLSIDFromProgID;
+const CLSCTX_INPROC_SERVER = win32.CLSCTX_INPROC_SERVER;
+const collection_mod = @import("collection.zig");
+const registry = @import("../registry.zig");
+
+const DISPATCH_METHOD: u32 = 0x1;
+
+/// VB6 Collection as an INPUT argument (BUSY-004 day-book/ledger
+/// family): `{"$collection": [...]}` asks BUSY for its OWN Collection
+/// via `GetCollectionObj` — which lives on CFixedInterface only, so it
+/// runs on a transient default-class aux (live-probed: calling it on
+/// the COtherServices1 session yields no_such_member; company state is
+/// process-global, the aux needs no OpenDB) — `Add`s each JSON item
+/// in order, and returns a VT_DISPATCH VARIANT the caller owns
+/// (VariantClear of the boxed arg releases it after the target call).
+/// Items marshal through [variantFromValue] (scalars).
+pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIANT {
+    var aux = try Session.init(sess.alloc);
+    defer aux.deinit();
+    const fi = registry.newestFixedInterface() orelse {
+        sess.setErr("no registered Busy2L*.CFixedInterface (is BUSY installed?)", .{});
+        return error.NoBusyProgId;
+    };
+    aux.create(fi) catch |aerr| {
+        sess.setErr("aux create '{s}' failed: {s}", .{ fi, @errorName(aerr) });
+        return aerr;
+    };
+    var empty: [0]json.Value = .{};
+    var res = try aux.invokeEx("GetCollectionObj", &empty, .{ .retain_ret = true });
+    defer res.deinit(aux.alloc);
+    const disp: *win32.IDispatch = @ptrCast(@alignCast(res.ret_disp orelse {
+        sess.setErr("GetCollectionObj returned no dispatch (ret vt-shape mismatch)", .{});
+        return error.BadCollection;
+    }));
+    // The retained ref transfers into `out` immediately; VariantClear
+    // of the boxed arg (invoke.zig) releases it after the target call.
+    var out = VARIANT.init();
+    out.vt = VT_DISPATCH;
+    out.data.pdispVal = disp;
+    errdefer _ = VariantClear(&out);
+
+    for (items) |*item| {
+        var arg = VARIANT.init();
+        try variantFromValue(sess, item, &arg);
+        defer _ = VariantClear(&arg);
+        // rgvarg reversal note: single-arg Add — order is moot.
+        var added = collection_mod.dispInvoke(sess, disp, "Add", DISPATCH_METHOD, (&arg)[0..1]) catch |err| {
+            sess.setErr("Collection.Add failed: {s}", .{@errorName(err)});
+            return err;
+        };
+        _ = VariantClear(&added);
+    }
+    return out;
+}
 
 pub fn variantFromValue(self: *Session, v: *const json.Value, out: *VARIANT) !void {
     out.* = VARIANT.init();

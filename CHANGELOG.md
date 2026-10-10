@@ -6,6 +6,16 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- Collection **INPUT** marshaling (`$collection` marker — BUSY-004):
+  `{"$collection":[...]}` sources a VB6 Collection from BUSY's own
+  `GetCollectionObj` (CFixedInterface via transient aux — the runtime
+  Collection class is unregistered anywhere), Adds items, passes as
+  typed `VT_BYREF|VT_DISPATCH` (`ByRef As _Collection`). Live:
+  `GetAccDayBookJSON` invokes cleanly with 4+ items; item 3 is the
+  report-rights identity (Admin clears BUSY's own gate); returns
+  BUSY's JSON (empty for the voucher-less test company). Plus
+  `invokeEx(retain_ret)`, `Session.clearErr` (stale-error fix),
+  marker parsing split to `markers.zig`.
 - Collection read marshaling (`core/com/collection.zig`): VB6
   Collection contract (`Count` + 1-based `Item`) enumerated into JSON
   arrays — new `{"$byref":"collection"}` out marker + `--enumerate-ret`
