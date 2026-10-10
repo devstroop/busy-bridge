@@ -158,6 +158,15 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
                     filled += 1;
                     continue;
                 }
+                if (a.get("$i2")) |iv| {
+                    // VT_I2 input (VB6 Short params — e.g. GetRepOptValues
+                    // p_RepID; VT_I4 mismatches DISP_E_TYPEMISMATCH live).
+                    storage[i] = VARIANT.init();
+                    storage[i].vt = VT_I2;
+                    storage[i].data.lVal = @intCast(if (iv.* == .int) iv.int else 0);
+                    filled += 1;
+                    continue;
+                }
                 if (a.get("$collection")) |items| {
                     // VB6 Collection INPUT argument (BUSY-004): BUSY's
                     // own GetCollectionObj builds the Collection, we

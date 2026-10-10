@@ -40,6 +40,22 @@ pub const MemberDump = struct {
     /// layout (see probe report; live decode of param VARTYPEs).
     fd_raw: [64]u8 = undefined,
     fd_len: usize,
+    /// Pointer candidates found inside the FUNCDESC (offset + target
+    /// bytes when readable) — locating the param ELEMDESC array.
+    ptrs: [4]PtrDump = .{ empty_ptr, empty_ptr, empty_ptr, empty_ptr },
+    nptrs: usize = 0,
+
+    pub const PtrDump = struct {
+        off: usize = 0,
+        readable: bool = false,
+        raw: [96]u8 = undefined,
+        /// When the pointed TYPEDESC is VT_PTR: bytes of the pointed-to
+        /// subtype TYPEDESC (depth-2 decode).
+        sub_hex: [16]u8 = undefined,
+        has_sub: bool = false,
+    };
+    const empty_ptr = PtrDump{};
+
     pub fn deinit(self: *MemberDump, alloc: Allocator) void {
         alloc.free(self.name);
     }
@@ -97,7 +113,34 @@ pub fn dumpMemberTypes(self: *Session, alloc: Allocator, filter: []const u8) ![]
             const src: [*]const u8 = @ptrCast(desc);
             const n = @min(64, FUNCDESC_SCAN);
             @memcpy(raw[0..n], src[0..n]);
-            try out.append(alloc, .{ .name = mname, .nparams = c_params, .fd_raw = raw, .fd_len = n });
+            var dump = MemberDump{ .name = mname, .nparams = c_params, .fd_raw = raw, .fd_len = n };
+            // Follow 4-byte pointer candidates (offsets 40..52) — the
+            // param ELEMDESC array pointer lives in the FUNCDESC tail.
+            var off: usize = 40;
+            while (off + 4 <= n and dump.nptrs < dump.ptrs.len) : (off += 4) {
+                const cand = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(desc) + off)).*;
+                if (cand < 0x10000) continue;
+                const p: *const anyopaque = @ptrFromInt(cand);
+                if (!win32.readable(p)) continue;
+                var tgt: [96]u8 = undefined;
+                @memcpy(&tgt, @as([*]const u8, @ptrCast(p))[0..96]);
+                var pd = MemberDump.PtrDump{ .off = off, .readable = true, .raw = tgt };
+                // Depth-2: entry0 VT_PTR? follow the subtype TYPEDESC.
+                const vt0 = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(p) + 4)).*;
+                if (vt0 == 26) {
+                    const sub = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(p))).*;
+                    if (sub > 0x10000) {
+                        const sp: *const anyopaque = @ptrFromInt(sub);
+                        if (win32.readable(sp)) {
+                            @memcpy(&pd.sub_hex, @as([*]const u8, @ptrCast(sp))[0..16]);
+                            pd.has_sub = true;
+                        }
+                    }
+                }
+                dump.ptrs[dump.nptrs] = pd;
+                dump.nptrs += 1;
+            }
+            try out.append(alloc, dump);
         } else {
             alloc.free(mname);
         }
