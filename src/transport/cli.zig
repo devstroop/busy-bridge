@@ -34,6 +34,7 @@ pub const Usage =
     \\       [--prog-id P] [--comp C]                   {"$byref": v} marks out-params
     \\       [--enumerate-ret]                          VT_DISPATCH return -> JSON array
     \\                                                  (VB6 Collection Count/Item walk)
+    \\       [--put | --putref]                         property-set invoke (wFlags 4/8)
     \\  busy-bridge record --comp C [--out F]          record golden reads as JSONL
     \\       transcript for replay CI (needs BUSY; default F=transcript.jsonl)
     \\  busy-bridge serve [--port 9820] [--host H]     HTTP JSON API: GET /surface /classes

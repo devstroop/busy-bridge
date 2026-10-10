@@ -391,6 +391,35 @@ table + the 925-class registry enumeration reshaped the map:
   getters, or dump the JSON getter's internal key literals from the
   code segment (key strings live beyond the method-name table).
 
+## 12. Iteration 12 — the RECORD wall (2026-01-10)
+
+Path-1 execution (CRepOptions string factory) + the CSR property route,
+both resolved to the same VB6 automation boundary:
+
+- `GetRepOpt()` → null; `GetRepOptFldFromStr("START_DATE=...")` → 0;
+  the string helpers are stateless converters, not builders.
+- Oracle on `SetRepOptionsStrInRepOpt`: BOTH params are
+  `VT_PTR → VT_USERDEFINED` (p_RepOptCol is a Collection-like
+  userdefined like p_ICol — dispatch-box coerces — but p_Repopt is the
+  UDT itself). `CPublicUDT`/`CUserUDT` coclasses exist but expose
+  empty surfaces (internal marker classes).
+- `CSR_CashBook.DayBook`: propertyget → VT_BOOL (success flag);
+  propertyput — via the new `--put`/`--putref` invoke flags
+  (wFlags 4/8, shipped this iteration) — rejects every object form:
+  PROPERTYPUT → `DISP_E_MEMBERNOTFOUND` (putref-only), PROPERTYPUTREF
+  + VT_DISPATCH (box or plain) → `DISP_E_BADVARTYPE`. Combined with
+  the put-param vt byte decoding as 24, the param is a
+  **VT_RECORD (UDT instance)** — VB6 automation serves those via
+  `IRecordInfo` (GetRecordInfo → CreateRecord/copy-in), which the
+  bridge does not implement.
+- **The wall is now precisely characterized**: JSON-getter ICol keys
+  unknown AND the RepOpt/DayBook-input types are RECORD/UDT params.
+  Next iteration options, in order of leverage: (a) implement
+  `IRecordInfo` marshaling (typelib-driven UDT create/fill/read —
+  mechanical, unlocks GetRepOptValues + DayBook put + every udt* param
+  family); (b) code-segment literal dump for the ICol key strings;
+  (c) operator-side BUSY API docs.
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user

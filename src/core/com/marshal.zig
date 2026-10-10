@@ -41,6 +41,54 @@ const registry = @import("../registry.zig");
 
 const DISPATCH_METHOD: u32 = 0x1;
 
+/// Input-arg markers handled in the invoke loop (split for the size
+/// gate): `{"$i2": n}` (VB6 Short) and `{"$collection": [...]}` (typed
+/// ByRef _Collection box). Sets `handled` when the arg was consumed.
+pub fn fillInputMarker(
+    sess: *Session,
+    storage: []VARIANT,
+    inboxes: []?*?*win32.IDispatch,
+    filled: *usize,
+    i: usize,
+    a: *const json.Value,
+    handled: *bool,
+) !void {
+    handled.* = false;
+    if (a.* != .obj) return;
+    if (a.get("$i2")) |iv| {
+        // VT_I2 input (VB6 Short params — e.g. GetRepOptValues p_RepID;
+        // VT_I4 mismatches DISP_E_TYPEMISMATCH live).
+        storage[i] = VARIANT.init();
+        storage[i].vt = win32.VT_I2;
+        storage[i].data.lVal = @intCast(if (iv.* == .int) iv.int else 0);
+        filled.* += 1;
+        handled.* = true;
+        return;
+    }
+    if (a.get("$collection")) |items| {
+        // VB6 Collection INPUT argument (BUSY-004): BUSY's own
+        // GetCollectionObj builds the Collection, items are Added, and
+        // it is passed as a typed VT_BYREF|VT_DISPATCH box — the shape
+        // a `ByRef p_ICol As _Collection` typelib param takes
+        // (typelib-verified: VT_PTR -> VT_USERDEFINED; byref-VARIANT
+        // got DISP_E_TYPEMISMATCH live).
+        if (items.* != .arr) {
+            sess.setErr("$collection must be a JSON array of items", .{});
+            return error.BadArgs;
+        }
+        const slot = try sess.alloc.create(?*win32.IDispatch);
+        slot.* = null;
+        inboxes[i] = slot;
+        filled.* += 1; // errdefer frees the slot on failure
+        const cv = try inputCollection(sess, items.arr);
+        slot.* = @ptrCast(@alignCast(cv.data.pdispVal)); // ref transfers
+        storage[i] = VARIANT.init();
+        storage[i].vt = VT_BYREF | VT_DISPATCH;
+        storage[i].data.byref = @ptrCast(slot);
+        handled.* = true;
+    }
+}
+
 /// VB6 Collection as an INPUT argument (BUSY-004 day-book/ledger
 /// family): `{"$collection": [...]}` asks BUSY for its OWN Collection
 /// via `GetCollectionObj` — which lives on CFixedInterface only, so it
