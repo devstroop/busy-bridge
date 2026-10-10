@@ -57,6 +57,8 @@ fn errResult(alloc: Allocator, fmt: format.Format, code: []const u8, machine: []
 
 fn statusOf(code: []const u8) []const u8 {
     if (eql(code, "400")) return "400 Bad Request";
+    if (eql(code, "401")) return "401 Unauthorized";
+    if (eql(code, "403")) return "403 Forbidden";
     if (eql(code, "404")) return "404 Not Found";
     if (eql(code, "422")) return "422 Unprocessable Entity";
     return "500 Internal Server Error";
@@ -146,9 +148,11 @@ pub fn route(
     path: []const u8,
     query: []const u8,
     body: []const u8,
+    us_entry: ?*@import("user_sessions.zig").UserSession,
+    require_session: bool,
 ) !?Result {
     if (!eql(path, "/v1") and !std.mem.startsWith(u8, path, "/v1/")) return null;
-    return try routeInner(alloc, sess, fmt, verb, path, query, body);
+    return try routeInner(alloc, sess, fmt, verb, path, query, body, us_entry, require_session);
 }
 
 fn routeInner(
@@ -159,6 +163,8 @@ fn routeInner(
     path: []const u8,
     query: []const u8,
     body: []const u8,
+    us_entry: ?*@import("user_sessions.zig").UserSession,
+    require_session: bool,
 ) !Result {
     const rest = path["/v1".len..];
 
@@ -282,6 +288,16 @@ fn routeInner(
             try ops.common.put(alloc, &args, "limit", .{ .int = n });
         }
         const args_obj = try ops.common.objFrom(alloc, &args);
+        // BUSY-012 report enforcement (contract §5): when the session
+        // gate is armed, the named report must map to a granted repID
+        // (unmapped reports fail closed for non-super users).
+        if (require_session) {
+            const se = us_entry orelse return errResult(alloc, fmt, "401", "unauthorized", "valid user session required (POST /auth/login)");
+            const bits = ops.rights.RightsBits{ .all = se.rights_all, .mask = se.report_mask };
+            if (!ops.rights.canViewReport(bits, key.?)) {
+                return errResult(alloc, fmt, "403", "rights_denied", "report not permitted for this user (see GET /auth/me rights.reports)");
+            }
+        }
         const v = ops.reports.run(sess, alloc, key.?, &args_obj) catch |err|
             return errRoute(alloc, fmt, sess, err);
         const report_key = key.?;

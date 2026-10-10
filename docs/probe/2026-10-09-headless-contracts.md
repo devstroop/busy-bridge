@@ -524,6 +524,39 @@ marshals to null today; input records still 0x80020005 across 4 shapes
   DD-MM-YYYY}]}`) — a native-shape oracle for any future schema
   work.
 
+## 15. Iteration 15 — report-rights MIDDLEWARE shipped (BUSY-012, contract §5)
+
+Enforcement for the named-report surfaces, riding the existing
+session gate:
+
+- **Session rights stash**: `POST /auth/login` already resolves the
+  contract-§3 rights payload (§7) — it now also stores a compact form
+  on the user session (`rights_all` + a `u32 report_mask` over
+  `rights.rep_ids`; `transport/user_sessions.zig`). Zero per-request
+  COM cost.
+- **Name → repID map** (`rights.repIdForName`): only PROVEN mappings
+  ship — `ledger` = 19 (Account Ledger; BUSY Functions.md anchor and
+  user1's live-granted report). Unmapped names (day-book,
+  trial-balance, stock-status, balances) return **403
+  `rights_denied`** for non-super users (fail closed, contract §3).
+  Extension procedure: grant the report to user1 in the BUSY GUI
+  user-rights screen, re-sweep `CheckUserRightsForReports` — the
+  flipped ID is the report — then add one map line.
+- **Enforcement points**: `GET /v1/reports/{name}` (v1.zig, via the
+  verified session carried in `ConnCtx.session_entry`) and `GET
+  /op/report/{name}` (routes_ops.zig parity). Dev posture (gate off)
+  unchanged: reports stay open on the operator tier.
+- **Live matrix** (serve `--require-session`, COMP0001): no token →
+  401; admin → ledger/day-book 200; **user1 → ledger 200 (repID 19
+  granted), day-book 403, trial-balance 403** on both surfaces; gate
+  off → open. New suite `tests/live/12-report-rights.ps1` (10
+  checks; hard `$ErrorActionPreference='Stop'` after catching a false
+  green in review — the harness's Finish-Tests cannot see exceptions
+  outside Check, so the suite must fail loudly).
+- Also: PS5.1 harness traps confirmed again — curl `-d` quoting
+  mangles JSON bodies (use body files), and WebRequest exceptions are
+  PS-wrapped (walk `.InnerException` for `.Response`).
+
 
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 

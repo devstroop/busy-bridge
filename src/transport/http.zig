@@ -153,7 +153,7 @@ fn handleConn(ctx: ConnCtx, alloc: Allocator, stream: *Io.net.Stream) !void {
 /// Ordered dispatch — the contract (issue #11 phase 5): company-ensure,
 /// meta, /v1, /op, raw, 404. Each group returns null to fall through.
 fn route(
-    ctx: ConnCtx,
+    ctx_in: ConnCtx,
     ralloc: Allocator,
     fmt: Format,
     verb: []const u8,
@@ -162,6 +162,7 @@ fn route(
     body: []const u8,
     ctype: []const u8,
 ) !Route {
+    var ctx = ctx_in; // per-request copy (session_entry stash below)
     // Company selection (issue #5): company-scoped routes honor ?comp=
     // (query, wins) or X-Company (header); default = the serve --comp.
     // Swap happens here - one company open at a time (BUSY COM state is
@@ -187,7 +188,9 @@ fn route(
     // the facade surfaces need a valid user session. Raw /call /query
     // stay device-tier until BUSY-013 decides the operator boundary.
     if (ctx.require_session and (startsWithCi(path, "/v1") or startsWithCi(path, "/op"))) {
-        if (ctx.us.verify(ctx.user_token, win32.unixSeconds()) == null) {
+        if (ctx.us.verify(ctx.user_token, win32.unixSeconds())) |se| {
+            ctx.session_entry = se; // BUSY-012 report gating reads this
+        } else {
             return .{
                 .status = "401 Unauthorized",
                 .content_type = ctOf(fmt),
@@ -206,7 +209,7 @@ fn route(
 
     // ---- versioned ERP resource facade (issue #7): /v1 ----
     if (startsWithCi(path, "/v1")) {
-        if (try v1.route(ralloc, ctx.sess, fmt, verb, path, query, body)) |r| {
+        if (try v1.route(ralloc, ctx.sess, fmt, verb, path, query, body, ctx.session_entry, ctx.require_session)) |r| {
             return .{ .status = r.status, .content_type = r.content_type, .payload = r.payload };
         }
     }

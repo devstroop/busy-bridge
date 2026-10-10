@@ -199,6 +199,24 @@ pub fn routeOps(
             try ops.common.put(ralloc, &entries, "limit", .{ .int = n });
         }
         const args_v = try ops.common.objFrom(ralloc, &entries);
+        // BUSY-012 report enforcement (contract §5): when the session
+        // gate is armed, the named report must map to a granted repID
+        // (unmapped reports fail closed for non-super users).
+        if (ctx.require_session) {
+            const se = ctx.session_entry orelse return .{
+                .status = "401 Unauthorized",
+                .content_type = sh.ctOf(fmt),
+                .payload = try sh.errPayload(ralloc, fmt, "401", "unauthorized", "valid user session required (POST /auth/login)"),
+            };
+            const bits = ops.rights.RightsBits{ .all = se.rights_all, .mask = se.report_mask };
+            if (!ops.rights.canViewReport(bits, report)) {
+                return .{
+                    .status = "403 Forbidden",
+                    .content_type = sh.ctOf(fmt),
+                    .payload = try sh.errPayload(ralloc, fmt, "403", "rights_denied", "report not permitted for this user (see GET /auth/me rights.reports)"),
+                };
+            }
+        }
         const v = ops.reports.run(ctx.sess, ralloc, report, &args_v) catch |err| {
             if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
             return err;

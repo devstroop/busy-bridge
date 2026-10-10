@@ -27,9 +27,13 @@ try {
     zig build replay-test
     if ($LASTEXITCODE -ne 0) { Write-Output "check_replay: zig build replay-test FAILED (exit $LASTEXITCODE)"; exit 1 }
 
-    $exe = Get-ChildItem -Recurse -Path (Join-Path $repo '.zig-cache') -Filter 'test.exe' -ErrorAction SilentlyContinue |
+    # The replay artifact is named replay_test.exe (build.zig) so it can
+    # never be confused with the main suite's test.exe in the shared
+    # cache dir (last build wins there — a cached replay build used to
+    # make this gate read the main binary's count).
+    $exe = Get-ChildItem -Recurse -Path (Join-Path $repo '.zig-cache') -Filter 'replay_test.exe' -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $exe) { Write-Output 'check_replay: test.exe not found in .zig-cache'; exit 1 }
+    if (-not $exe) { Write-Output 'check_replay: replay_test.exe not found in .zig-cache'; exit 1 }
 
     $ErrorActionPreference = 'Continue'
     $out = & $exe.FullName 2>&1 | Out-String
