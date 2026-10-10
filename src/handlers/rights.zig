@@ -5,8 +5,11 @@
 //! p_VchSeriesGrpCode, p_masterSeriesGrpCode, p_MastName, p_ErrStr)`
 //! on `COtherServices1` answers per-user, per-report:
 //! - super user (admin): true across the verified repID space
-//! - user1 (regular): false for 0–15, **true for 19 (Account Ledger)
-//!   and 201 (Bills Rec/Pay)** — real per-report discrimination
+//! - user1 (regular): false for 0–15, **true for 18 (Day Book), 19
+//!   (Account Ledger), 201 (Bills Rec/Pay) and 203 (unidentified Bills
+//!   item — not an app report name)** — real per-report discrimination
+//!   (sweep 2026-10-10; 18 operator-attested as Day Book, sitting
+//!   immediately before Account Ledger in ID space)
 //! - bogus repID 99999: DISP_E_OVERFLOW (0x8002000a) — p_RepID is a
 //!   VB6 Integer (max 32767); semantic validity of in-range IDs is
 //!   otherwise unconfirmed (admin answers true for every in-range ID)
@@ -25,9 +28,11 @@ const Allocator = std.mem.Allocator;
 
 /// The empirically + documentarily verified repID space: contiguous
 /// 0–15 (live sweep) plus documented IDs (BUSY Functions.md):
-/// 19 = Account Ledger, 21 = Account Register, 201 = Bills Rec/Pay.
+/// 19 = Account Ledger, 21 = Account Register, 201 = Bills Rec/Pay;
+/// 18 = Day Book and 203 = unidentified Bills item from the 2026-10-10
+/// GUI-grant re-sweep (18 operator-attested; 203 not an app name).
 /// All fit VB6 Integer. Extend via probe sweep as more reports land.
-pub const rep_ids = [_]i64{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 21, 201 };
+pub const rep_ids = [_]i64{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 18, 19, 21, 201, 203 };
 
 /// Resolve normalized rights (contract §3) for `user` through BUSY's
 /// own per-user report-rights primitive. Super user short-circuits to
@@ -89,6 +94,7 @@ pub fn denyAll(alloc: Allocator) !json.Value {
 /// `CheckUserRightsForReports` — the flipped ID is the report).
 pub fn repIdForName(name: []const u8) ?i64 {
     if (std.ascii.eqlIgnoreCase(name, "ledger")) return 19; // Account Ledger
+    if (std.ascii.eqlIgnoreCase(name, "day-book")) return 18; // Day Book (GUI-grant sweep 2026-10-10)
     return null;
 }
 
@@ -166,7 +172,7 @@ test "rep_ids fit VB6 Integer and cover the verified space" {
     for (rep_ids) |id| {
         try testing.expect(id >= -32768 and id <= 32767);
     }
-    try testing.expectEqual(@as(usize, 19), rep_ids.len);
+    try testing.expectEqual(@as(usize, 21), rep_ids.len);
 }
 
 test "denyAll is fully closed" {
@@ -180,11 +186,12 @@ test "denyAll is fully closed" {
     try testing.expectEqual(@as(?bool, false), v.get("can_authorise").?.bool);
 }
 
-test "repIdForName: ledger maps to Account Ledger 19, else fail closed" {
+test "repIdForName: ledger/day-book map, else fail closed" {
     try testing.expectEqual(@as(?i64, 19), repIdForName("ledger"));
     try testing.expectEqual(@as(?i64, 19), repIdForName("LEDGER"));
-    try testing.expect(repIdForName("day-book") == null);
-    try testing.expect(repIdForName("trial-balance") == null);
+    try testing.expectEqual(@as(?i64, 18), repIdForName("day-book"));
+    try testing.expectEqual(@as(?i64, 18), repIdForName("DAY-BOOK"));
+    try testing.expect(repIdForName("trial-balance") == null); // unmapped
     try testing.expect(repIdForName("") == null);
 }
 
@@ -197,6 +204,12 @@ test "canViewReport gates by bits and denies unmapped reports" {
         if (id == 19) granted.mask = @as(u32, 1) << @intCast(i);
     }
     try testing.expect(canViewReport(granted, "ledger"));
-    try testing.expect(!canViewReport(granted, "day-book")); // unmapped
+    try testing.expect(!canViewReport(granted, "day-book")); // mapped, not granted
+    try testing.expect(!canViewReport(granted, "trial-balance")); // unmapped fail-closed
     try testing.expect(!canViewReport(.{}, "ledger")); // no bits
+    // grant 18 too (the 2026-10-10 GUI grant): day-book opens
+    for (rep_ids, 0..) |id, i| {
+        if (id == 18) granted.mask |= @as(u32, 1) << @intCast(i);
+    }
+    try testing.expect(canViewReport(granted, "day-book"));
 }

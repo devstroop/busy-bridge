@@ -1,9 +1,10 @@
 # 12 - Report rights enforcement (BUSY-012, contract §5): the session
 #      gate + per-report rights on /v1/reports/* and /op/report/*.
 #      Admin (super) passes everything; user1 (BUSY-granted Account
-#      Ledger, repID 19) gets ledger 200 + day-book 403 rights_denied
-#      (unmapped reports fail closed). Fixture: COMP0001 users
-#      admin/user1 (env: BUSY_PROBE_ADMIN_PW / BUSY_PROBE_USER1_PW).
+#      Ledger 19 + Day Book 18) gets ledger/day-book 200; unmapped
+#      trial-balance fails closed (403 rights_denied). Fixture:
+#      COMP0001 users admin/user1 (env: BUSY_PROBE_ADMIN_PW /
+#      BUSY_PROBE_USER1_PW).
 #   powershell -File tests/live/12-report-rights.ps1
 . (Join-Path $PSScriptRoot 'common.ps1')
 # Any exception outside a Check = hard failure (no false greens).
@@ -66,11 +67,11 @@ try {
     $r = Invoke-Auth "http://127.0.0.1:$port/v1/reports/day-book?from=2026-04-01&to=2027-03-31" 'GET' $ta $null
     Check 'admin /v1/reports/day-book -> 200 (super bypasses map)' ($r.st -eq 200 -and $r.body.Contains('"kind":"day-book"')) "st=$($r.st)"
 
-    Write-Output '===== D. user1: granted ledger (repID 19), unmapped day-book denied ====='
+    Write-Output '===== D. user1: granted ledger (19) + day-book (18); unmapped trial-balance denied ====='
     $r = Invoke-Auth "http://127.0.0.1:$port/v1/reports/ledger?name=Cash-in-hand&from=2026-04-01&to=2027-03-31" 'GET' $tu $null
     Check 'user1 /v1/reports/ledger -> 200 (Account Ledger = 19)' ($r.st -eq 200 -and $r.body.Contains('"kind":"ledger"')) "st=$($r.st) $($r.body.Substring(0, [Math]::Min(160, $r.body.Length)))"
     $r = Invoke-Auth "http://127.0.0.1:$port/v1/reports/day-book?from=2026-04-01&to=2027-03-31" 'GET' $tu $null
-    Check 'user1 /v1/reports/day-book -> 403 rights_denied (unmapped fails closed)' ($r.st -eq 403 -and $r.body.Contains('"code":"rights_denied"')) "st=$($r.st) $($r.body.Substring(0, [Math]::Min(160, $r.body.Length)))"
+    Check 'user1 /v1/reports/day-book -> 200 (Day Book = 18)' ($r.st -eq 200 -and $r.body.Contains('"kind":"day-book"')) "st=$($r.st) $($r.body.Substring(0, [Math]::Min(160, $r.body.Length)))"
     $r = Invoke-Auth "http://127.0.0.1:$port/v1/reports/trial-balance?from=2026-04-01&to=2027-03-31" 'GET' $tu $null
     Check 'user1 /v1/reports/trial-balance -> 403 (unmapped)' ($r.st -eq 403) "st=$($r.st)"
 
@@ -78,7 +79,7 @@ try {
     $r = Invoke-Auth "http://127.0.0.1:$port/op/report/ledger?name=Cash-in-hand&from=2026-04-01&to=2027-03-31" 'GET' $tu $null
     Check 'user1 /op/report/ledger -> 200' ($r.st -eq 200 -and $r.body.Contains('"kind":"ledger"')) "st=$($r.st)"
     $r = Invoke-Auth "http://127.0.0.1:$port/op/report/day-book?from=2026-04-01&to=2027-03-31" 'GET' $tu $null
-    Check 'user1 /op/report/day-book -> 403' ($r.st -eq 403 -and $r.body.Contains('"code":"rights_denied"')) "st=$($r.st)"
+    Check 'user1 /op/report/day-book -> 200 (repID 18)' ($r.st -eq 200 -and $r.body.Contains('"kind":"day-book"')) "st=$($r.st)"
 
     Write-Output '===== F. enforcement rides the session gate only ====='
     # dev posture (no --require-session): report routes open (operator tier)
