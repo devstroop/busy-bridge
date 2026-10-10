@@ -465,6 +465,66 @@ parallel with the record-shape hunt (`GetRepOpt()` returns VT_RECORD →
 marshals to null today; input records still 0x80020005 across 4 shapes
 — §12 option (a) continues).
 
+## 14. Iteration 14 — BUSY-003: JSON-save type wall SOLVED + udtVchData schema decoded (2026-10-10)
+
+**Type-marshaling for the Save*FromJson family is cracked** (was
+0x80020005 across all prior probe attempts):
+
+- **One-param-at-a-time walk** is the definitive shape oracle: pass
+  args `0..k`; `DISP_E_PARAMNOTFOUND` = prefix accepted (later params
+  missing), `DISP_E_TYPEMISMATCH` = arg k wrong, callee-error =
+  prefix fully accepted. Applied to `SaveMastFromJson(short, string,
+  string, int, int, bool, string, _Collection, string)`:
+  - `p_MastType` is **VT_I2** → `{"$i2":2}` (plain JSON int = VT_I4
+    mismatches — same trap as GetRepOptValues' p_RepID, §10).
+  - `p_CSUserCol` = the input-collection marker `{"$collection":[…]}`
+    (typed VT_BYREF|VT_DISPATCH box, §8).
+  - `p_ErrStr` = `{"$byref":"bstr"}`; `p_MAMastCode`/`p_MastCode` are
+    plain VT_I4 byval; `p_ErrCode` (last) is a plain string byval —
+    **that last one was the residual mismatch** (the old probe passed
+    `$byref:i4`).
+  - With these the callee RUNS: `{}`/any doc raises BUSY's own
+    `DISP_E_EXCEPTION` **with no IErrorInfo** ("COM call failed") —
+    an invisible validation raise, schema-dependent (see below).
+
+- **`SaveVchFromJsonForOldMobileApp` works end-to-end** (the first
+  JSON save ever to surface a BUSY validation message through the
+  bridge): `[{"$i2":9}, doc, {"$byref":"bstr"}, vchcode, chkMobile,
+  userName, {"$collection":[]}, savedAsCancelled]` →
+  `ok:true, result:false, outs:["Invalid voucher series."]`.
+
+- **`--types` now decodes RETURN-type UDTs** (`ret_udt`): FUNCDESC
+  bytes 32-39 = {hreftype, vt=29} → `describeHreftype`. This cracked
+  the JSON schemas open:
+  - **`udtVchData` (4720 B, ~170 fields) = THE voucher JSON schema**:
+    `VchType(I2), VchSeriesName, STPTName, SalePurcAccName,
+    Date(VT_DATE), StockUpdationDate, VchNo, AutoVchNo, MasterName1,
+    MasterName2, ItemEntries/AccEntries (VT_PTR arrays), ShortNar,
+    tmpVchSeriesCode …` — field names ARE the JSON keys.
+  - `udtAccMast` = the master JSON schema (htype via fd byte 32).
+
+- **The remaining wall, precisely**: `SaveVchFromJsonForOldMobileApp`
+  rejects EVERY document with `Invalid voucher series.` — proven NOT
+  document-sourced: exact-schema keys (`VchSeriesName` ✓ name
+  verified against Tran1), kitchen-sink of all 13 candidate keys,
+  native `GetJSONFromRecordset` row verbatim (with `p_Vchcode=2`),
+  `tmpVchSeriesCode`, both `p_ChkIfMobileUser` values, 5
+  `p_CSUserCol` contents, and every username (`ChkIfMobileUser` =
+  false for Busy/Admin/user1 — **COMP0001 has no mobile user**).
+  Conclusion: the series gate reads per-user mobile-series
+  configuration that does not exist headless. Next options, in
+  order: (a) operator grants a voucher series to a mobile user in
+  the GUI (one-time), (b) locate the config table via `query --db
+  common`/FY DB (UserControl is common-DB, iteration 6), (c) the new
+  9-param `SaveVchFromJson` shape walk (still 0x80020005; its
+  `p_ErrCode` tail differs from the old-mobile form).
+
+- **Also landed**: `GetJSONFromRecordset(sql, {"$byref":"bstr"})` →
+  BUSY's own canonical JSON (`{"JSON":[{<raw column names>, Date as
+  DD-MM-YYYY}]}`) — a native-shape oracle for any future schema
+  work.
+
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user
