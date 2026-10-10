@@ -56,7 +56,13 @@ pub const byrefKindFromMarker = markers.byrefKindFromMarker;
 /// `retain_ret` keeps an EXTRA reference to a VT_DISPATCH return in
 /// CallResult.ret_disp (caller Releases; used by $collection input
 /// marshaling via BUSY's own GetCollectionObj).
-pub const InvokeOpts = struct { enumerate_ret: bool = false, retain_ret: bool = false };
+pub const InvokeOpts = struct {
+    enumerate_ret: bool = false,
+    retain_ret: bool = false,
+    /// DISPATCH_PROPERTYPUT (4) / PUTREF (8) instead of METHOD (1) —
+    /// for property-set calls (e.g. CSR_CashBook.DayBook put).
+    flags: u32 = 1,
+};
 
 pub fn invoke(self: *Session, method: []const u8, args: []const json.Value) !CallResult {
     return self.invokeEx(method, args, .{});
@@ -158,37 +164,9 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
                     filled += 1;
                     continue;
                 }
-                if (a.get("$i2")) |iv| {
-                    // VT_I2 input (VB6 Short params — e.g. GetRepOptValues
-                    // p_RepID; VT_I4 mismatches DISP_E_TYPEMISMATCH live).
-                    storage[i] = VARIANT.init();
-                    storage[i].vt = VT_I2;
-                    storage[i].data.lVal = @intCast(if (iv.* == .int) iv.int else 0);
-                    filled += 1;
-                    continue;
-                }
-                if (a.get("$collection")) |items| {
-                    // VB6 Collection INPUT argument (BUSY-004): BUSY's
-                    // own GetCollectionObj builds the Collection, we
-                    // Add the items, then pass it as a typed
-                    // VT_BYREF|VT_DISPATCH box — the shape a
-                    // `ByRef p_ICol As _Collection` typelib param takes
-                    // (byref-VARIANT got DISP_E_TYPEMISMATCH live).
-                    if (items.* != .arr) {
-                        self.setErr("$collection must be a JSON array of items", .{});
-                        return error.BadArgs;
-                    }
-                    const slot = try self.alloc.create(?*win32.IDispatch);
-                    slot.* = null;
-                    inboxes[i] = slot;
-                    filled += 1; // errdefer frees the slot on failure
-                    const cv = try marshal.inputCollection(self, items.arr);
-                    slot.* = @ptrCast(@alignCast(cv.data.pdispVal)); // ref transfers
-                    storage[i] = VARIANT.init();
-                    storage[i].vt = VT_BYREF | VT_DISPATCH;
-                    storage[i].data.byref = @ptrCast(slot);
-                    continue;
-                }
+                var handled = false;
+                try marshal.fillInputMarker(self, storage, inboxes, &filled, i, &a, &handled);
+                if (handled) continue;
                 if (a.get("$byref")) |inner| {
                     // Typed box marker (services-class typed params) or
                     // empty/absent marker -> Variant-byref seeded by value.
@@ -271,7 +249,7 @@ pub fn invokeEx(self: *Session, method: []const u8, args: []const json.Value, op
         .cNamedArgs = 0,
     };
     var result = VARIANT.init();
-    hr = d.vtbl.Invoke(d, dispid, &IID_NULL, 0, 1, &dp, &result, null, null); // DISPATCH_METHOD
+    hr = d.vtbl.Invoke(d, dispid, &IID_NULL, 0, @intCast(opts.flags), &dp, &result, null, null);
     if (hr < 0) {
         _ = VariantClear(&result);
         // The callee may have written into typed boxes before failing -

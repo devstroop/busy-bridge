@@ -303,7 +303,8 @@ pub fn cmdCall(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             break :blk;
         };
         const enum_ret = cli.flag("--enumerate-ret");
-        const res = sess.invokeEx(method, parsed.arr, .{ .enumerate_ret = enum_ret }) catch |err| {
+        const wflags: u32 = if (cli.flag("--putref")) 8 else if (cli.flag("--put")) 4 else 1;
+        const res = sess.invokeEx(method, parsed.arr, .{ .enumerate_ret = enum_ret, .flags = wflags }) catch |err| {
             var cb: [64]u8 = undefined;
             const msg = if (sess.lastError().len > 0) sess.lastError() else @errorName(err);
             out_text = try failText(alloc, fmt, helpers.errCode(err, &cb), msg);
