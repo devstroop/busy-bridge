@@ -107,7 +107,7 @@ pub fn cmdSurface(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
             if (i != 0) w.raw(",") catch return 1;
             w.raw("{\"name\":") catch return 1;
             w.str(m.name) catch return 1;
-            var nbuf: [32]u8 = undefined;
+            var nbuf: [64]u8 = undefined;
             w.raw(std.fmt.bufPrint(&nbuf, ",\"nparams\":{d},\"fd_hex\":\"", .{m.nparams}) catch unreachable) catch return 1;
             const hex = "0123456789abcdef";
             for (m.fd_raw[0..m.fd_len]) |b| {
@@ -129,7 +129,9 @@ pub fn cmdSurface(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
                 }
                 w.raw("}") catch return 1;
             }
-            w.raw("]}") catch return 1;
+            w.raw("]") catch return 1;
+            if (m.udt) |*u| @import("../../core/com/surface.zig").writeUdtJson(w, u) catch return 1;
+            w.raw("}") catch return 1;
         }
         w.raw("]}") catch return 1;
         try printOut(io, alloc, out.items);

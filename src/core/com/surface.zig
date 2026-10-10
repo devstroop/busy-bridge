@@ -44,6 +44,9 @@ pub const MemberDump = struct {
     /// bytes when readable) — locating the param ELEMDESC array.
     ptrs: [4]PtrDump = .{ empty_ptr, empty_ptr, empty_ptr, empty_ptr },
     nptrs: usize = 0,
+    /// UDT descriptor for entry0's VT_PTR->USERDEFINED param (the
+    /// RepOpt/ICol-class types): name, size, field names.
+    udt: ?@import("recordinfo.zig").UdtDesc = null,
 
     pub const PtrDump = struct {
         off: usize = 0,
@@ -57,6 +60,7 @@ pub const MemberDump = struct {
     const empty_ptr = PtrDump{};
 
     pub fn deinit(self: *MemberDump, alloc: Allocator) void {
+        if (self.udt) |*u| u.deinit(alloc);
         alloc.free(self.name);
     }
 };
@@ -140,6 +144,17 @@ pub fn dumpMemberTypes(self: *Session, alloc: Allocator, filter: []const u8) ![]
                 dump.ptrs[dump.nptrs] = pd;
                 dump.nptrs += 1;
             }
+            // UDT describe: the off52 candidate is the param ELEMDESC
+            // array; entry0's VT_PTR target is the pointed TYPEDESC.
+            for (dump.ptrs[0..dump.nptrs]) |pt| {
+                if (pt.off != 52 or !pt.readable) continue;
+                const cand0 = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(desc) + 52)).*;
+                if (cand0 > 0x10000) {
+                    const tp: *const u8 = @ptrFromInt(cand0);
+                    dump.udt = @import("recordinfo.zig").describeParamUdt(self, alloc, info, tp) catch null;
+                }
+                break;
+            }
             try out.append(alloc, dump);
         } else {
             alloc.free(mname);
@@ -212,6 +227,7 @@ pub fn surface(self: *Session, alloc: Allocator) ![]Member {
         names[0] = null;
 
         var pi: u32 = 1;
+
         while (pi < got) : (pi += 1) {
             if (names[pi]) |np| {
                 const l = SysStringLen(np);
@@ -231,4 +247,20 @@ pub fn surface(self: *Session, alloc: Allocator) ![]Member {
         });
     }
     return out.toOwnedSlice(alloc);
+}
+
+
+/// Write the `--types` UDT descriptor JSON fragment (fields as
+/// [name,off,vt] triples) — split from raw.zig (size gate).
+pub fn writeUdtJson(w_in: anytype, u: *const @import("recordinfo.zig").UdtDesc) !void {
+    var w = w_in; // writer methods need mutable self (call site w is const)
+    try w.raw(",\"udt\":{\"name\":");
+    try w.str(u.name);
+    var nbuf: [96]u8 = undefined;
+    try w.raw(std.fmt.bufPrint(&nbuf, ",\"size\":{d},\"kind\":{d},\"htype\":{d},\"fields\":[", .{ u.size, u.kind, u.hreftype }) catch unreachable);
+    for (u.fields, 0..) |f, fi| {
+        if (fi != 0) try w.raw(",");
+        try w.str(std.fmt.bufPrint(&nbuf, "[\"{s}\",{d},{d}]", .{ f.name, f.off, f.vt }) catch unreachable);
+    }
+    try w.raw("]}");
 }

@@ -111,6 +111,53 @@ pub const VT_INT: u16 = 22;
 pub const VT_UINT: u16 = 23;
 pub const VT_HRESULT: u16 = 25;
 pub const VT_BYREF: u16 = 0x4000;
+pub const VT_RECORD: u16 = 36;
+
+/// Minimal ITypeLib vtable (oaidl order) — for UDT lookup by name.
+pub const ITypeLib = struct {
+    vtbl: *const Vtbl,
+    const Vtbl = extern struct {
+        QueryInterface: *const fn (*ITypeLib, *const GUID, *?*anyopaque) callconv(.winapi) i32,
+        AddRef: *const fn (*ITypeLib) callconv(.winapi) u32,
+        Release: *const fn (*ITypeLib) callconv(.winapi) u32,
+        GetTypeInfoCount: *const fn (*ITypeLib, *u32) callconv(.winapi) i32,
+        GetTypeInfo: *const fn (*ITypeLib, u32, *?*ITypeInfo) callconv(.winapi) i32,
+        GetTypeInfoOfGuid: *const fn (*ITypeLib, *const GUID, *?*ITypeInfo) callconv(.winapi) i32,
+        GetLibAttr: *const fn (*ITypeLib, *?*anyopaque) callconv(.winapi) i32,
+        GetTypeComp: *const fn (*ITypeLib, *?*anyopaque) callconv(.winapi) i32,
+        FindName: *const fn (*ITypeLib, [*:0]const u16, u32, *?*ITypeInfo, [*]i32, *u16) callconv(.winapi) i32,
+        ReleaseTLibAttr: *const fn (*ITypeLib, *anyopaque) callconv(.winapi) void,
+    };
+};
+
+pub extern "oleaut32" fn GetRecordInfoFromTypeInfo(pTypeInfo: *ITypeInfo, ppRecordInfo: *?*anyopaque) callconv(.winapi) i32;
+
+/// IRecordInfo vtable (oaidl declaration order; calibrated live via
+/// GetFieldCount/GetSize before field ops are trusted).
+pub const IRecordInfo = struct {
+    vtbl: *const Vtbl,
+    const Vtbl = extern struct {
+        QueryInterface: *const fn (*IRecordInfo, *const GUID, *?*anyopaque) callconv(.winapi) i32,
+        AddRef: *const fn (*IRecordInfo) callconv(.winapi) u32,
+        Release: *const fn (*IRecordInfo) callconv(.winapi) u32,
+        GetGuid: *const fn (*IRecordInfo, *GUID) callconv(.winapi) i32,
+        GetTypeInfoName: *const fn (*IRecordInfo, *?[*:0]u16) callconv(.winapi) i32,
+        GetDocumentation: *const fn (*IRecordInfo, i32, *?[*:0]u16, *?[*:0]u16, *u32, *?[*:0]u16) callconv(.winapi) i32,
+        RecordInit: *const fn (*IRecordInfo, ?*anyopaque) callconv(.winapi) i32,
+        RecordClear: *const fn (*IRecordInfo, ?*anyopaque) callconv(.winapi) i32,
+        RecordCopy: *const fn (*IRecordInfo, ?*anyopaque, ?*anyopaque) callconv(.winapi) i32,
+        GetField: *const fn (*IRecordInfo, ?*anyopaque, u32, *VARIANT) callconv(.winapi) i32,
+        GetFieldNames: *const fn (*IRecordInfo, u32, ?*VARIANT, [*]?[*:0]u16) callconv(.winapi) i32,
+        GetFieldCount: *const fn (*IRecordInfo, *u32) callconv(.winapi) i32,
+        GetSize: *const fn (*IRecordInfo, *u32) callconv(.winapi) i32,
+        GetFieldInfo: *const fn (*IRecordInfo, u32, ?*anyopaque, *GUID) callconv(.winapi) i32,
+        GetTypeInfo: *const fn (*IRecordInfo, *?*ITypeInfo) callconv(.winapi) i32,
+        IsMatchingType: *const fn (*IRecordInfo, *const GUID, *const GUID) callconv(.winapi) i32,
+        CopyRecord: *const fn (*IRecordInfo, ?*anyopaque, ?*anyopaque) callconv(.winapi) i32,
+        SetField: *const fn (*IRecordInfo, ?*anyopaque, u32, *VARIANT) callconv(.winapi) i32,
+        SetFieldNoCopy: *const fn (*IRecordInfo, ?*anyopaque, u32, *VARIANT) callconv(.winapi) i32,
+    };
+};
 
 pub const VARIANT = extern struct {
     vt: u16,
@@ -130,6 +177,11 @@ pub const VARIANT = extern struct {
         byref: ?*anyopaque,
         pdispVal: ?*anyopaque,
         punkVal: ?*anyopaque,
+        /// VT_RECORD (x86): record pointer + record-info pointer.
+        rec: extern struct {
+            pRecValue: ?*anyopaque,
+            pRecInfo: ?*anyopaque,
+        },
     } align(8),
 
     pub fn init() VARIANT {
@@ -201,11 +253,11 @@ pub const ITypeInfo = struct {
         InvokeFunc: *const fn (*ITypeInfo, ?*anyopaque, i32, u16, *DISPPARAMS, *VARIANT, *i32) callconv(.winapi) i32,
         GetDocumentation: *const fn (*ITypeInfo, i32, *?[*:0]u16, *?[*:0]u16, *u32, *?[*:0]u16) callconv(.winapi) i32,
         GetDllEntry: *const fn (*ITypeInfo, i32, u16, u32, *?[*:0]u16, *?[*:0]u16, *u16) callconv(.winapi) i32,
-        GetRefTypeInfo: *const fn (*ITypeInfo, u16, *?*ITypeInfo) callconv(.winapi) i32,
+        GetRefTypeInfo: *const fn (*ITypeInfo, u32, *?*ITypeInfo) callconv(.winapi) i32,
         AddressOfMember: *const fn (*ITypeInfo, i32, u16, *?*anyopaque) callconv(.winapi) i32,
         CreateInstance: *const fn (*ITypeInfo, *const GUID, *?*anyopaque) callconv(.winapi) i32,
-        GetMops: *const fn (*ITypeInfo, i32, *?[*:0]u16) callconv(.winapi) i32,
         GetContainingTypeLib: *const fn (*ITypeInfo, *?*anyopaque, *u32) callconv(.winapi) i32,
+        GetMops: *const fn (*ITypeInfo, i32, *?[*:0]u16) callconv(.winapi) i32,
         ReleaseTypeAttr: *const fn (*ITypeInfo, *u8) callconv(.winapi) void,
         ReleaseFuncDesc: *const fn (*ITypeInfo, *u8) callconv(.winapi) void,
         ReleaseVarDesc: *const fn (*ITypeInfo, *u8) callconv(.winapi) void,
