@@ -357,6 +357,40 @@ following. Decoded:
   UDT-blocked; the JSON-getter item positions stay unpinned pending
   either the UDT layout work or BUSY-side API docs.
 
+## 11. Iteration 11 — the class map: CSR coclasses + CRepOptions (2026-10-10)
+
+ANSI (not wide!) string scan of `Busy2L21.dll` around the method-name
+table + the 925-class registry enumeration reshaped the map:
+
+- **Per-report CSR coclasses** (`Busy2LA21.CSR_*` — ~100 of them:
+  `CSR_CashBook`, `CSR_ItemDayBook`, `CSR_AccLedger*`, `CSR_Ageing`,
+  `CSR_BalSheet`…): tiny classes — e.g. `CSR_CashBook` exposes a
+  single **`DayBook` property (get/put)** that raises DISP_E_EXCEPTION
+  headless (needs GUI-ish setup). The screen-report engine family
+  (`CSR`/`CSRep`: GetReady/GetRST/GoTop/GetNext strings) is real but
+  initialization flow unknown.
+- **`Busy2L21.CRepOptions`** (326 members) — the RepOpt factory:
+  `GetRepOptionsCol()` returns the full **named-option vocabulary**
+  (live: START_DATE, END_DATE, REP_DATE, ACC_NAME, ACC_GRP_NAME,
+  VCH_TYPE, VCH_SERIES_NAME, MASTER_SERIES_GROUP, BRANCH_NAME,
+  LEDGER_TYPE, SUMMARY_TYPE, ~90 keys) and
+  `SetRepOptionsStrInRepOpt(p_RepOptCol, p_Repopt)` builds the UDT
+  from a string collection — the documented crack for the RepOpt UDT
+  wall (no struct layout needed).
+- `GetMasterSeriesGrpCodeOfUser("Admin")` (COtherServices1) → 0
+  (default group).
+- **`$collection` keyed pairs** shipped: `["value","KEY"]` and
+  `[{"$date":…},"KEY"]` items now `Add value, key` — behavior shifts
+  live (the positional rights gate re-indexes, proving BUSY reads the
+  collection differently), but the correct KEY NAMES for the JSON
+  getters remain unpinned (RepOpt vocabulary names tried:
+  START_DATE/END_DATE/ACC_NAME/FROM_DATE/TO_DATE/PARTY/MASTER_NAME1 —
+  all still `{}`). Next: build a real RepOpt via
+  `SetRepOptionsStrInRepOpt` and route through
+  `GetRecordsetFromScreenReport`/`ShowOnEnterScrRepDirect`-style
+  getters, or dump the JSON getter's internal key literals from the
+  code segment (key strings live beyond the method-name table).
+
 ## 6. Iteration 6 — the login primitive FOUND (2026-10-10)
 
 **`ValidUserPassword(p_Name, p_Password)` — the regular-user
