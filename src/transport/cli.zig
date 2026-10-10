@@ -24,6 +24,7 @@ pub const Usage =
     \\usage:
     \\  busy-bridge classes                            list all registered BUSY COM classes
     \\  busy-bridge surface [--prog-id P] [--member M] dump IDispatch surface as JSON
+    \\       [--types]                               raw FUNCDESC hex (param-type calibration)
     \\  busy-bridge query --comp C --sql "SELECT ..."  query open company (opens via OpenDB)
     \\       [--query-mode full|read-only|off] [--max-rows N]   guard (default full, 10000)
     \\  busy-bridge op <catalog|list|get>            ERP operations facade (normalized CRUD,
