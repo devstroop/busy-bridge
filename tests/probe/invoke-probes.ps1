@@ -61,6 +61,7 @@ foreach ($p in $probes) {
     $argStr = "call --method $($p.method) --args-b64 $b64"
     if ($p.progId) { $argStr += " --prog-id $($p.progId)" }
     if ($p.useComp) { $argStr += " --comp $Comp" }
+    if ($p.enumerateRet) { $argStr += " --enumerate-ret" }
     $to = if ($p.timeoutSec) { [int]$p.timeoutSec } else { $DefaultTimeout }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $Bridge
