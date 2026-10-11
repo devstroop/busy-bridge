@@ -43,14 +43,18 @@ const registry = @import("../registry.zig");
 const DISPATCH_METHOD: u32 = 0x1;
 
 /// A record arg's owned payload (the hand-built UDT buffer; freed
-/// after the invoke — BSTR fields inside are process-lifetime for now).
+/// after the invoke — BSTR fields inside are released post-invoke via `owned` (§22).
 /// `box` is the byrefvar-shape inner VARIANT (owned; freed too — it
 /// leaked 16 B/record on the error path until iteration 19).
 pub const RecBox = struct {
     buf: [*]u8,
     size: u32,
     box: ?*win32.VARIANT = null,
+    /// COM-embedded fields (BSTR / Collection) released before buf.
+    owned: []const @import("recordinfo.zig").OwnedField = &.{},
     pub fn destroy(self: *RecBox, alloc: Allocator) void {
+        @import("recordinfo.zig").releaseOwned(self.buf, self.owned);
+        if (self.owned.len > 0) alloc.free(self.owned);
         if (self.box) |b| alloc.destroy(b);
         alloc.free(self.buf[0..self.size]);
     }
@@ -92,7 +96,8 @@ pub fn fillInputMarker(
         const ht = rd.get("htype") orelse return error.BadArgs;
         const flds = rd.get("fields") orelse return error.BadArgs;
         if (ht.* != .int) return error.BadArgs;
-        const rec = try @import("recordinfo.zig").recordFromHreftype(sess, sess.alloc, @intCast(ht.int), flds);
+        const inst = try @import("recordinfo.zig").recordFromHreftype(sess, sess.alloc, @intCast(ht.int), flds);
+        const rec = inst.variant;
         // Extract the payload buffer for cleanup; the byrefvar shape
         // wraps the record in an owned inner VARIANT (freed via RecBox).
         var recbox: ?*win32.VARIANT = null;
@@ -101,8 +106,11 @@ pub fn fillInputMarker(
             break :blk @ptrCast(recbox.?.data.rec.pRecValue.?);
         } else @ptrCast(rec.data.rec.pRecValue.?);
         const rbsize: u32 = rec.r2;
-        const rb = try sess.alloc.create(RecBox);
-        rb.* = .{ .buf = buf, .size = rbsize, .box = recbox };
+        const rb = sess.alloc.create(RecBox) catch |e| {
+            @import("recordinfo.zig").releaseOwned(buf, inst.owned);
+            return e;
+        };
+        rb.* = .{ .buf = buf, .size = rbsize, .box = recbox, .owned = inst.owned };
         recboxes[i] = rb;
         filled.* += 1;
         storage[i] = rec;

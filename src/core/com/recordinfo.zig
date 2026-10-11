@@ -6,7 +6,6 @@
 const std = @import("std");
 const Session = @import("session.zig").Session;
 const win32 = @import("win32.zig");
-const utf16 = @import("utf16.zig");
 const json = @import("../../util/json.zig");
 const marshal = @import("marshal.zig");
 const helpers = @import("../../util/helpers.zig");
@@ -14,7 +13,6 @@ const helpers = @import("../../util/helpers.zig");
 const Allocator = std.mem.Allocator;
 const ITypeInfo = win32.ITypeInfo;
 const VARIANT = win32.VARIANT;
-const SysStringLen = win32.SysStringLen;
 const SysFreeString = win32.SysFreeString;
 const SysAllocString = win32.SysAllocString;
 const VariantClear = win32.VariantClear;
@@ -36,134 +34,43 @@ fn jbool(v: *const json.Value) ?bool {
     return if (v.* == .bool) v.bool else null;
 }
 
-/// One UDT field: name + byte offset (VARDESC oInst@+8) + VARTYPE
-/// (TYPEDESC@+12 -> vt@+16) — enough to hand-build/read record bytes
-/// without IRecordInfo calls (whose vtable is trap-thunked).
-pub const FieldDesc = struct {
-    name: []u8,
-    off: u32,
-    vt: u16,
+// UDT typelib description (name/size/field layout) lives in
+// udtdesc.zig (011 size-gate split); re-exported so import paths
+// and call sites never change.
+pub const FieldDesc = @import("udtdesc.zig").FieldDesc;
+pub const UdtDesc = @import("udtdesc.zig").UdtDesc;
+pub const describeParamUdt = @import("udtdesc.zig").describeParamUdt;
+pub const describeHreftype = @import("udtdesc.zig").describeHreftype;
+pub const describeUdtTi = @import("udtdesc.zig").describeUdtTi;
+
+// (describeParamUdt/describeHreftype/describeUdtTi moved to udtdesc.zig — re-exported above.)
+
+/// One COM-owned value embedded in a hand-built record buffer — the
+/// RecBox cleanup walk releases these (VT_BSTR fields inside records
+/// were process-lifetime before §22; embedded Collections are new).
+pub const OwnedField = struct { off: u32, vt: u16 };
+
+/// A built record: the boxed VARIANT plus the embedded COM-owned
+/// fields the RecBox must release before freeing the buffer.
+pub const RecordInst = struct {
+    variant: VARIANT,
+    owned: []const OwnedField,
 };
 
-pub const UdtDesc = struct {
-    name: []u8,
-    size: u32,
-    /// TKIND (1 = TKIND_RECORD).
-    kind: u8,
-    /// HREFTYPE (for GetRefTypeInfo-based instancing).
-    hreftype: u32,
-    fields: []FieldDesc,
-    pub fn deinit(self: *UdtDesc, alloc: Allocator) void {
-        for (self.fields) |f| alloc.free(f.name);
-        alloc.free(self.fields);
-        alloc.free(self.name);
-    }
-};
-
-/// Describe the UDT behind a param TYPEDESC (VT_PTR->USERDEFINED or
-/// direct USERDEFINED): name, cbSizeInstance, field names, hreftype.
-pub fn describeParamUdt(
-    sess: *Session,
-    alloc: Allocator,
-    ti_method: *ITypeInfo,
-    param_tdesc: *const u8,
-) !?UdtDesc {
-    const vt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(param_tdesc) + 4)).*;
-    var hreftype: u32 = 0;
-    if (vt == 29) {
-        hreftype = @as(*align(1) const u32, @ptrCast(param_tdesc)).*;
-    } else if (vt == 26) {
-        const pointed: *const u8 = @ptrFromInt(@as(usize, @intCast(@as(*align(1) const u32, @ptrCast(param_tdesc)).*)));
-        const pvt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(pointed) + 4)).*;
-        if (pvt != 29) return null;
-        hreftype = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(pointed))).*;
-    } else return null;
-    return describeHreftype(sess, alloc, ti_method, hreftype);
-}
-
-/// Resolve HREFTYPE -> UDT ITypeInfo and describe it.
-pub fn describeHreftype(
-    sess: *Session,
-    alloc: Allocator,
-    ti_method: *ITypeInfo,
-    hreftype: u32,
-) !?UdtDesc {
-    var udt_ti: ?*ITypeInfo = null;
-    const hr = ti_method.vtbl.GetRefTypeInfo(ti_method, hreftype, &udt_ti);
-    const ti = udt_ti orelse {
-        sess.setErr("GetRefTypeInfo({d}) failed 0x{x}", .{ hreftype, @as(u32, @bitCast(hr)) });
-        return null;
-    };
-    defer _ = ti.vtbl.Release(ti);
-    return describeUdtTi(alloc, ti, hreftype);
-}
-
-/// Describe an already-resolved UDT ITypeInfo (name/size/fields with
-/// offsets + vtypes).
-pub fn describeUdtTi(
-    alloc: Allocator,
-    ti: *ITypeInfo,
-    hreftype: u32,
-) !?UdtDesc {
-    var hr: i32 = 0;
-
-    var ta: ?*u8 = null;
-    hr = ti.vtbl.GetTypeAttr(ti, &ta);
-    if (hr < 0) return null;
-    const attr = ta orelse return null;
-    const size = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(attr) + 36)).*;
-    const kind = @as(*align(1) const u8, @ptrFromInt(@intFromPtr(attr) + 40)).*;
-    ti.vtbl.ReleaseTypeAttr(ti, attr);
-
-    var n1: ?[*:0]u16 = null;
-    var n2: ?[*:0]u16 = null;
-    var help: u32 = 0;
-    var nf: ?[*:0]u16 = null;
-    hr = ti.vtbl.GetDocumentation(ti, -1, &n1, &n2, &help, &nf);
-    var udt_name: []u8 = try alloc.dupe(u8, "<udt>");
-    if (hr >= 0) {
-        if (n1) |np| {
-            alloc.free(udt_name);
-            udt_name = try utf16.fromUtf16(alloc, np, SysStringLen(np));
-            SysFreeString(np);
-        }
-        if (n2) |np| SysFreeString(np);
-        if (nf) |np| SysFreeString(np);
-    }
-
-    var fields: std.ArrayList(FieldDesc) = .empty;
-    errdefer {
-        for (fields.items) |f| alloc.free(f.name);
-        fields.deinit(alloc);
-    }
-    var i: u16 = 0;
-    while (i < 256 and fields.items.len < 200) : (i += 1) {
-        var vd: ?*u8 = null;
-        hr = ti.vtbl.GetVarDesc(ti, i, &vd);
-        if (hr < 0) break;
-        const desc = vd orelse break;
-        defer ti.vtbl.ReleaseVarDesc(ti, desc);
-        const memid = @as(*align(1) const i32, @ptrCast(desc)).*;
-        const off = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(desc) + 8)).*;
-        const fvt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(desc) + 16)).*;
-        var names: [2]?[*:0]u16 = @splat(null);
-        var got: u32 = 0;
-        hr = ti.vtbl.GetNames(ti, memid, &names, 2, &got);
-        if (hr < 0 or got == 0) continue;
-        const l = SysStringLen(names[0].?);
-        const fname = try utf16.fromUtf16(alloc, names[0].?, l);
-        SysFreeString(names[0]);
-        names[0] = null;
-        if (names[1]) |np| SysFreeString(np);
-        try fields.append(alloc, .{ .name = fname, .off = off, .vt = fvt });
-    }
-
-    return .{
-        .name = udt_name,
-        .size = size,
-        .kind = kind,
-        .hreftype = hreftype,
-        .fields = try fields.toOwnedSlice(alloc),
+/// Release the COM-owned values embedded in a record buffer
+/// (VT_BSTR -> SysFreeString, VT_DISPATCH -> Release). Called by the
+/// RecBox cleanup and the record-build error path.
+pub fn releaseOwned(buf: [*]u8, owned: []const OwnedField) void {
+    for (owned) |o| switch (o.vt) {
+        8 => { // VT_BSTR
+            const p = @as(*align(1) ?[*:0]u16, @ptrCast(buf + o.off)).*;
+            if (p) |s| SysFreeString(s);
+        },
+        26 => { // VT_DISPATCH (embedded Collection)
+            const p = @as(*align(1) ?*win32.IDispatch, @ptrCast(buf + o.off)).*;
+            if (p) |d| _ = d.vtbl.Release(d);
+        },
+        else => {},
     };
 }
 
@@ -193,15 +100,16 @@ pub fn calibrate(ri: *win32.IRecordInfo) void {
 
 /// Hand-build a UDT instance from its layout (VARDESC offsets+vtypes)
 /// — the IRecordInfo vtable is trap-thunked headless, so bytes are
-/// packed manually. Returns VT_BYREF|VT_RECORD (byref = struct ptr);
-/// size is stashed in variant r2 for the caller's cleanup box.
+/// packed manually. Returns RecordInst: the VT_BYREF|VT_RECORD
+/// variant (byref = struct ptr; size stashed in variant r2 for the
+/// caller's cleanup box) + the embedded COM-owned fields to release.
 pub fn recordFromUdtTi(
     sess: *Session,
     alloc: Allocator,
     ti_udt: *ITypeInfo,
     hreftype: u32,
     fields: *const json.Value,
-) !VARIANT {
+) !RecordInst {
     const desc = (try describeUdtTi(alloc, ti_udt, hreftype)) orelse {
         sess.setErr("UDT describe failed", .{});
         return error.RecordInfo;
@@ -213,6 +121,11 @@ pub fn recordFromUdtTi(
     const buf = alloc.alloc(u8, d.size) catch return error.OutOfMemory;
     errdefer alloc.free(buf);
     @memset(buf, 0);
+    var owned: std.ArrayList(OwnedField) = .empty;
+    errdefer {
+        releaseOwned(buf.ptr, owned.items);
+        owned.deinit(alloc);
+    }
 
     if (fields.* == .obj) {
         for (fields.obj) |entry| {
@@ -235,6 +148,7 @@ pub fn recordFromUdtTi(
                     wb[n] = 0;
                     const b = SysAllocString(@ptrCast(wb[0..n].ptr));
                     @as(*align(1) ?[*:0]u16, @ptrCast(dst)).* = b;
+                    if (b != null) try owned.append(alloc, .{ .off = f.off, .vt = 8 });
                 },
                 // VT_DATE / VT_R8.
                 7, 5 => {
@@ -269,6 +183,23 @@ pub fn recordFromUdtTi(
                 17 => {
                     dst[0] = @intCast(ji64(&entry.val) orelse 0);
                 },
+                // VT_DISPATCH: embedded Collection via {"$collection":
+                // [...]} (iteration 22 — the series-grp config writers
+                // take UDTs with Object-collection fields). The ref
+                // transfers from the inputCollection VARIANT into the
+                // record bytes; RecBox releases it after the invoke.
+                26 => {
+                    if (entry.val != .obj) continue;
+                    const marker = entry.val.get("$collection") orelse continue;
+                    if (marker.* != .arr) {
+                        sess.setErr("$collection field '{s}' must be a JSON array", .{entry.key});
+                        return error.BadArgs;
+                    }
+                    const cv = try marshal.inputCollection(sess, marker.arr);
+                    const dsp: ?*win32.IDispatch = @ptrCast(@alignCast(cv.data.pdispVal));
+                    @as(*align(1) ?*win32.IDispatch, @ptrCast(dst)).* = dsp;
+                    if (dsp != null) try owned.append(alloc, .{ .off = f.off, .vt = 26 });
+                },
                 else => {}, // unsupported field type skipped
             }
         }
@@ -300,7 +231,7 @@ pub fn recordFromUdtTi(
         },
     }
     out.r2 = @truncate(d.size); // cleanup size stash (u16)
-    return out;
+    return .{ .variant = out, .owned = try owned.toOwnedSlice(alloc) };
 }
 
 /// Probe knob for the $record input shape (iteration 19): BUSY_REC_SHAPE
@@ -326,7 +257,7 @@ pub fn recordFromHreftype(
     alloc: Allocator,
     hreftype: u32,
     fields: *const json.Value,
-) !VARIANT {
+) !RecordInst {
     const d = sess.disp orelse return error.NoDispatch;
     var tc: u32 = 0;
     _ = d.vtbl.GetTypeInfoCount(d, &tc);
@@ -355,4 +286,13 @@ test "shapeFromName maps the BUSY_REC_SHAPE sweep values" {
     try testing.expectEqual(RecShape.byval, shapeFromName("byval"));
     try testing.expectEqual(RecShape.byrefrec, shapeFromName("byrefrec"));
     try testing.expectEqual(RecShape.byrefvar, shapeFromName("byrefvar"));
+}
+
+test "releaseOwned tolerates empty lists and unknown field vts" {
+    // Fabricated buffer: only no-op entries (empty list; unknown vt
+    // skipped) — the BSTR/DISPATCH paths need live COM (§22).
+    var buf: [8]u8 = undefined;
+    @memset(&buf, 0);
+    releaseOwned(&buf, &.{});
+    releaseOwned(&buf, &.{.{ .off = 0, .vt = 99 }});
 }

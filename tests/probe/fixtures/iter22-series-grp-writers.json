@@ -1,0 +1,39 @@
+{
+  "captured": "2026-10-12 (probe iteration 22, BUSY Rel 14, COMP0001 DEMO)",
+  "note": "Series-grp writer battery: full-content $record (with $collection fields) is accepted; nothing persists observably; the JSON-save gate is untouched. Report section 22.",
+  "udt": {
+    "name": "udtVchSeriesGrpConfig",
+    "htype": 50333725,
+    "fields": {
+      "VchSeriesCodeCol": "VT_DISPATCH (Collection of series codes)",
+      "VatAccCol": "VT_DISPATCH (Collection)",
+      "tmpVchSerGrpCode": "VT_I4",
+      "VchSerGrpName": "VT_BSTR",
+      "tmpVchSeriesNameCol": "VT_DISPATCH (Collection of names)",
+      "tmpVatAccNameCol": "VT_DISPATCH (Collection)"
+    }
+  },
+  "calls": {
+    "save-full": {
+      "method": "SaveVchSeriesGrpConfig",
+      "progId": "Busy2L21.COtherServices",
+      "fields": { "tmpVchSerGrpCode": 9001, "VchSerGrpName": "ZZ Probe Grp", "VchSeriesCodeCol": { "$collection": [1290] }, "tmpVchSeriesNameCol": { "$collection": ["ZigVch9"] }, "VatAccCol": { "$collection": [] }, "tmpVatAccNameCol": { "$collection": [] } },
+      "result": "ok:true, result:null — no visible persistence (TRAN10/11/12 + UserControl unchanged)"
+    },
+    "save-grp-companion": {
+      "method": "SaveVoucherSeriesGrp",
+      "progId": "Busy2L21.CFixedInterface1",
+      "result": "ok:true, result:null — same"
+    },
+    "gate-baselines": {
+      "IfVchSeriesBelongs2RestrictedUser(1290)": true,
+      "UserHasAccessToMobileApp(Admin)": false,
+      "DisableVchSeriesGrpOnReporting": false,
+      "SaveVchFromJsonForOldMobileApp(real doc)": "result:false, outs:[\"Invalid voucher series.\"]"
+    }
+  },
+  "storage-pinned": {
+    "TRAN10": "FY DB; columns MASTERCODE1/MASTERCODE2/RECTYPE (BUSY's own GetVoucherSeriesGrpQry fragment); 0 rows; TRAN11/TRAN12 also exist, 0 rows",
+    "UserControl": "common DB; Name, RecType, C1-C4, B1-B15, I1-I4, L1-L4, FinYrs; Admin/User1 x RecType{1,7} all defaults"
+  }
+}
