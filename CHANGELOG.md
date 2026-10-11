@@ -6,6 +6,20 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **P0 probe iteration 20 (BUSY-002/003/004 sweep)**: `_Collection` return
+  enumeration **live-proven** (`fin-years-enumerated` → `[2026]`;
+  `comp-list-enumerated` → Count=2, items = nested dispatch = next deep-walk
+  step); `GetMobileUserRightsJSONstr` executes with a `udtGeneral`
+  (htype 50333065) `$record` — rights schema now fixture-blocked only;
+  `udtVchSeriesGrpConfig` (htype 50333725) decoded and the
+  `InitUdtVSGrpConfig`/`SaveVchSeriesGrpConfig` writers (on
+  `COtherServices`) callable — `$collection`-inside-`$record` passes the
+  bridge, content validation remains; `SaveVchFromJson` head pinned
+  `[I2, doc, byref-err]` by prefix walk; cold-OpenDB re-measured
+  4.1–7.7 s. New `enumerateRet` probe field + 3 manifest probes (results
+  committed); report §20 + per-operation `docs/probe/write-capability.md`
+  (BUSY-003 acceptance, feeds 020). BUSY-001 closed (harness landed).
+
 - **WP2 master writes: per-kind create/update/delete over the registry**
   (mirrors busy-server PR): `masters/fields.zig` — one probe-verified field
   map per kind (request key -> BUSY element + str/num/bool; booleans
