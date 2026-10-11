@@ -113,50 +113,55 @@ pub fn routeOps(
         return sh.opOk(ralloc, fmt, "get-voucher", &v);
     }
 
-    // ---- M2 writes (issue #7): one exec dispatcher for CLI + HTTP ----
-    if (eql(verb, "POST") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
-        const parsed = json.parse(ralloc, body) catch {
-            return sh.badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
-        };
-        const op_name = if (eql(path, "/op/account")) "create-account" else "create-item";
-        const v = ops.exec.run(ctx.sess, ralloc, op_name, &parsed) catch |err| {
-            if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
-            return err;
-        };
-        return sh.opOk(ralloc, fmt, op_name, &v);
-    }
-    if (eql(verb, "PUT") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
-        const raw_name = (try sh.qparam(ralloc, query, "name")) orelse
-            return sh.badReq(ralloc, fmt, "bad_args", "missing \"name\" (the master to change)");
-        const parsed = json.parse(ralloc, body) catch {
-            return sh.badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
-        };
-        // inject the positional key (it wins over "name" in the body)
-        var ne: std.ArrayList(json.Value.Entry) = .empty;
-        try ops.common.put(ralloc, &ne, "name", .{ .str = try ralloc.dupe(u8, raw_name) });
-        const name_obj = try ops.common.objFrom(ralloc, &ne);
-        const merged = ops.common.mergeRoot(ralloc, &parsed, &name_obj) catch {
-            return sh.badReq(ralloc, fmt, "bad_args", "body must be a JSON object of string values");
-        };
-        const op_name = if (eql(path, "/op/account")) "update-account" else "update-item";
-        const v = ops.exec.run(ctx.sess, ralloc, op_name, &merged) catch |err| {
-            if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
-            return err;
-        };
-        return sh.opOk(ralloc, fmt, op_name, &v);
-    }
-    if (eql(verb, "DELETE") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
-        const raw_name = (try sh.qparam(ralloc, query, "name")) orelse
-            return sh.badReq(ralloc, fmt, "bad_args", "missing \"name\"");
-        var ne: std.ArrayList(json.Value.Entry) = .empty;
-        try ops.common.put(ralloc, &ne, "name", .{ .str = try ralloc.dupe(u8, raw_name) });
-        const args_v = try ops.common.objFrom(ralloc, &ne);
-        const op_name = if (eql(path, "/op/account")) "delete-account" else "delete-item";
-        const v = ops.exec.run(ctx.sess, ralloc, op_name, &args_v) catch |err| {
-            if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
-            return err;
-        };
-        return sh.opOk(ralloc, fmt, op_name, &v);
+    // ---- M2 writes (issue #7 / WP2): one exec dispatcher for CLI + HTTP.
+    // Every routed kind's SINGULAR path takes POST (create) / PUT (update,
+    // ?name=) / DELETE (?name=) — the same shapes the CLI and /v1 build.
+    // Plural write paths keep 404ing (catalog routes are singular);
+    // vouchers/series/batch have no kindPath entry and fall to their arms.
+    if (!eql(verb, "GET") and std.mem.startsWith(u8, path, "/op/") and
+        std.mem.indexOfScalar(u8, path["/op/".len..], '/') == null)
+    {
+        const seg = path["/op/".len..];
+        if (ops.masters.kindPath(seg)) |kp| {
+            if (!kp.list) {
+                if (eql(verb, "POST")) {
+                    const parsed = json.parse(ralloc, body) catch {
+                        return sh.badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
+                    };
+                    const op_name = try std.fmt.allocPrint(ralloc, "create-{s}", .{kp.sing});
+                    const v = ops.exec.run(ctx.sess, ralloc, op_name, &parsed) catch |err| {
+                        if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+                        return err;
+                    };
+                    return sh.opOk(ralloc, fmt, op_name, &v);
+                }
+                if (eql(verb, "PUT") or eql(verb, "DELETE")) {
+                    const raw_name = (try sh.qparam(ralloc, query, "name")) orelse
+                        return sh.badReq(ralloc, fmt, "bad_args", "missing \"name\" (the master to change)");
+                    var ne: std.ArrayList(json.Value.Entry) = .empty;
+                    try ops.common.put(ralloc, &ne, "name", .{ .str = try ralloc.dupe(u8, raw_name) });
+                    const name_obj = try ops.common.objFrom(ralloc, &ne);
+                    const args_v: json.Value = if (eql(verb, "PUT")) blk: {
+                        const parsed = json.parse(ralloc, body) catch {
+                            return sh.badReq(ralloc, fmt, "invalid_json", "invalid JSON body");
+                        };
+                        // inject the positional key (it wins over "name" in the body)
+                        break :blk ops.common.mergeRoot(ralloc, &parsed, &name_obj) catch {
+                            return sh.badReq(ralloc, fmt, "bad_args", "body must be a JSON object of string values");
+                        };
+                    } else name_obj;
+                    const op_name = try std.fmt.allocPrint(ralloc, "{s}-{s}", .{
+                        if (eql(verb, "PUT")) "update" else "delete",
+                        kp.sing,
+                    });
+                    const v = ops.exec.run(ctx.sess, ralloc, op_name, &args_v) catch |err| {
+                        if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+                        return err;
+                    };
+                    return sh.opOk(ralloc, fmt, op_name, &v);
+                }
+            }
+        }
     }
     if (eql(verb, "POST") and eql(path, "/op/voucher")) {
         const parsed = json.parse(ralloc, body) catch {

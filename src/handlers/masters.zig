@@ -42,25 +42,35 @@ pub const KindEntry = struct {
     plur: []const u8,
     cons: []const u8,
     route: bool = true,
-    /// SaveMasterFromXML wrapper element (`<Account>`, `<Item>`); null =
-    /// writes for this kind are not wired yet (reads only) — `create`
-    /// answers a precise BadArgs until the kind's write op lands.
+    /// SaveMasterFromXML wrapper element (`<Account>`, `<Unit>`). Present =
+    /// create/update wired (probe-verified field maps, WP2); null = writes
+    /// stay fail-closed (reads only) with a precise BadArgs — covers
+    /// unit-conversion (SaveMasterFromXML crashes on MasterType 16) and
+    /// bom (no shape template on BUSY 14).
     wrap: ?[]const u8 = null,
+    /// Create requires `"parent"` (group name): account/item always sit in
+    /// a group; probe showed groups/store accept parent-less creates.
+    needs_parent: bool = false,
+    /// DeleteMasterByCode probe-verified on BUSY 14 (WP2): true = deletes
+    /// cleanly. false = BUSY's COM delete crashes with no IErrorInfo and
+    /// does NOT delete (unit, sale/purchase-type, store, bill-sundry) or
+    /// the kind is read-only — fail closed with a precise message.
+    deletable: bool = false,
 };
 
 pub const kinds = [_]KindEntry{
-    .{ .kind = .account, .sing = "account", .plur = "accounts", .cons = "ACCOUNT_MASTER", .wrap = "Account" },
-    .{ .kind = .item, .sing = "item", .plur = "items", .cons = "ITEM_MASTER", .wrap = "Item" },
-    .{ .kind = .account_group, .sing = "account-group", .plur = "account-groups", .cons = "ACCOUNT_GROUP_MASTER" },
-    .{ .kind = .item_group, .sing = "item-group", .plur = "item-groups", .cons = "ITEM_GROUP_MASTER" },
-    .{ .kind = .unit, .sing = "unit", .plur = "units", .cons = "UNIT_MASTER" },
+    .{ .kind = .account, .sing = "account", .plur = "accounts", .cons = "ACCOUNT_MASTER", .wrap = "Account", .needs_parent = true, .deletable = true },
+    .{ .kind = .item, .sing = "item", .plur = "items", .cons = "ITEM_MASTER", .wrap = "Item", .needs_parent = true, .deletable = true },
+    .{ .kind = .account_group, .sing = "account-group", .plur = "account-groups", .cons = "ACCOUNT_GROUP_MASTER", .wrap = "AccountGroup", .deletable = true },
+    .{ .kind = .item_group, .sing = "item-group", .plur = "item-groups", .cons = "ITEM_GROUP_MASTER", .wrap = "ItemGroup", .deletable = true },
+    .{ .kind = .unit, .sing = "unit", .plur = "units", .cons = "UNIT_MASTER", .wrap = "Unit" },
     .{ .kind = .unit_conversion, .sing = "unit-conversion", .plur = "unit-conversions", .cons = "UNIT_CONVERSION_MASTER" },
-    .{ .kind = .bill_sundry, .sing = "bill-sundry", .plur = "bill-sundries", .cons = "BILL_SUNDRY_MASTER" },
-    .{ .kind = .store, .sing = "store", .plur = "stores", .cons = "MATERIAL_CENTER_MASTER" },
-    .{ .kind = .sale_type, .sing = "sale-type", .plur = "sale-types", .cons = "SALE_TYPE_MASTER" },
-    .{ .kind = .purchase_type, .sing = "purchase-type", .plur = "purchase-types", .cons = "PURCHASE_TYPE_MASTER" },
+    .{ .kind = .bill_sundry, .sing = "bill-sundry", .plur = "bill-sundries", .cons = "BILL_SUNDRY_MASTER", .wrap = "BillSundry" },
+    .{ .kind = .store, .sing = "store", .plur = "stores", .cons = "MATERIAL_CENTER_MASTER", .wrap = "MaterialCenter" },
+    .{ .kind = .sale_type, .sing = "sale-type", .plur = "sale-types", .cons = "SALE_TYPE_MASTER", .wrap = "SaleType" },
+    .{ .kind = .purchase_type, .sing = "purchase-type", .plur = "purchase-types", .cons = "PURCHASE_TYPE_MASTER", .wrap = "PurchaseType" },
     .{ .kind = .bom, .sing = "bom", .plur = "boms", .cons = "BILL_OF_MATERIAL_MASTER" },
-    .{ .kind = .tax_category, .sing = "tax-category", .plur = "tax-categories", .cons = "TAX_CATEGORY_MASTER" },
+    .{ .kind = .tax_category, .sing = "tax-category", .plur = "tax-categories", .cons = "TAX_CATEGORY_MASTER", .wrap = "TaxCategory", .deletable = true },
     .{ .kind = .voucher_series, .sing = "series", .plur = "series", .cons = "VOUCHER_SERIES_MASTER", .route = false },
 };
 
@@ -106,10 +116,56 @@ pub fn typeCode(kind: Kind) i64 {
 }
 
 /// SaveMasterFromXML wrapper element for the kind, or null when writes
-/// for that kind are not wired yet (WP1: reads only — fail with BadArgs).
+/// for that kind stay fail-closed (WP2: unit-conversion/bom read-only).
 pub fn wrapElement(kind: Kind) ?[]const u8 {
     for (kinds) |k| if (k.kind == kind) return k.wrap;
     return null;
+}
+
+/// Match a raw op-name kind word (`create-unit-conversion` →
+/// `unit-conversion`) — any kind including internal (route=false) ones.
+/// The write dispatcher uses this so blocked kinds answer their precise
+/// handler message instead of the generic unknown-op fallthrough; routes
+/// keep the route-gated `kindPath`.
+pub fn kindBySing(s: []const u8) ?Kind {
+    for (kinds) |k| if (std.ascii.eqlIgnoreCase(s, k.sing)) return k.kind;
+    return null;
+}
+
+/// Create/update wired for the kind (probe-verified field maps, WP2).
+pub fn writable(kind: Kind) bool {
+    return wrapElement(kind) != null;
+}
+
+/// Delete probe-verified clean on BUSY 14 (WP2; default false = fail
+/// closed until a kind's delete path is proven).
+pub fn canDelete(kind: Kind) bool {
+    for (kinds) |k| if (k.kind == kind) return k.deletable;
+    return false;
+}
+
+/// Create requires `"parent"` (group name).
+pub fn needsParent(kind: Kind) bool {
+    for (kinds) |k| if (k.kind == kind) return k.needs_parent;
+    return false;
+}
+
+/// Catalog generation counts: create/update rows per writable kind,
+/// delete rows per deletable kind.
+pub fn writableCount() usize {
+    var n: usize = 0;
+    for (kinds) |k| {
+        if (k.wrap != null) n += 1;
+    }
+    return n;
+}
+
+pub fn deletableCount() usize {
+    var n: usize = 0;
+    for (kinds) |k| {
+        if (k.deletable) n += 1;
+    }
+    return n;
 }
 
 /// Number of routable kinds (surface indexes, catalog generation).
@@ -220,6 +276,33 @@ test "typeCode resolves every kind's MasterType constant" {
     try testing.expectEqual(@as(usize, 12), plurals.len);
     try testing.expectEqualStrings("accounts", plurals[0]);
     try testing.expectEqualStrings("units", plurals[4]);
+}
+
+test "write capability flags are probe-derived and fail closed" {
+    // create/update: wired for the 10 probe-verified kinds
+    try testing.expect(writable(.account));
+    try testing.expect(writable(.unit));
+    try testing.expect(writable(.tax_category));
+    try testing.expect(!writable(.unit_conversion));
+    try testing.expect(!writable(.bom));
+    try testing.expect(!writable(.voucher_series));
+    // delete: only the five kinds whose COM delete probe-verified clean
+    try testing.expect(canDelete(.account) and canDelete(.item));
+    try testing.expect(canDelete(.account_group) and canDelete(.item_group));
+    try testing.expect(canDelete(.tax_category));
+    try testing.expect(!canDelete(.unit));
+    try testing.expect(!canDelete(.sale_type) and !canDelete(.purchase_type));
+    try testing.expect(!canDelete(.store) and !canDelete(.bill_sundry));
+    // parent requirement (probe: parent-less creates valid for the rest)
+    try testing.expect(needsParent(.account) and needsParent(.item));
+    try testing.expect(!needsParent(.account_group) and !needsParent(.store));
+    try testing.expectEqual(@as(usize, 10), writableCount());
+    try testing.expectEqual(@as(usize, 5), deletableCount());
+    // op-name kind words resolve even for internal kinds
+    try testing.expect(kindBySing("unit-conversion") == .unit_conversion);
+    try testing.expect(kindBySing("series") == .voucher_series);
+    try testing.expect(kindBySing("UNIT") == .unit); // case-insensitive singular
+    try testing.expect(kindBySing("frobnicate") == null);
 }
 
 test "masters submodules are reachable from the test root" {
