@@ -52,7 +52,8 @@ pub const byrefKindFromMarker = markers.byrefKindFromMarker;
 
 /// Invoke options (collection read-back): `enumerate_ret` walks a
 /// VT_DISPATCH return value through the VB6 Collection contract
-/// (core/com/collection.zig) instead of surfacing "<dispatch>";
+/// (core/com/collection.zig — nested Collections recursed up to
+/// collection.max_depth) instead of surfacing "<dispatch>";
 /// `retain_ret` keeps an EXTRA reference to a VT_DISPATCH return in
 /// CallResult.ret_disp (caller Releases; used by $collection input
 /// marshaling via BUSY's own GetCollectionObj).

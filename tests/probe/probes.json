@@ -327,7 +327,7 @@
       "args": ["user1", 201, 0, 0, 0, "", {"$byref": "bstr"}], "useComp": true, "expect": "any", "notes": "Bills Rec/Pay for regular user" },
     { "id": "comp-list-enumerated", "issue": "BUSY-004", "group": "session",
       "method": "GetCompList", "args": ["C:\\BusyWin\\DATA\\"], "useComp": false, "enumerateRet": true, "expect": "OK",
-      "notes": "iter20: --enumerate-ret walks the returned Collection (Count=2); items are nested dispatch objects (M1 boundary, deep-walk = next bridge step)" },
+      "notes": "iter21: --enumerate-ret recurses nested Collections -> [[compName, compCode, fyStart(DD/MM/YYYY), i2flag, '', '', guid, '', '', ''], ...] (COMP0001 + COMP0002 on this box)" },
     { "id": "fin-years-enumerated", "issue": "BUSY-004", "group": "session",
       "method": "GetAllFinYearsOfSpecificCompCode", "progId": "Busy2L21.CFixedInterface1",
       "args": ["COMP0001"], "useComp": true, "enumerateRet": true, "expect": "OK",

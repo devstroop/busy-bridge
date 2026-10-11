@@ -6,6 +6,18 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **Collection read-back recurses nested Collections** (BUSY-004,
+  report §21): `GetCompList`'s items are themselves VB6 Collections —
+  `toJson` now walks VT_DISPATCH `Item()` results that satisfy the
+  Collection contract (bounded `max_depth = 3`, cycle-safe, fail-soft
+  to the `"<dispatch>"` string). The company picker payload is decoded
+  live: `[["DEMO","COMP0001","01/04/2026",1,"","","<guid>","","",""],
+  …]` per company (name, code, FY start DD/MM/YYYY, flag, guid).
+  Recursion needed an explicit `WalkError` set (mutual inferred-error
+  dependency). Discovery script `tests/probe/comp-item-shape.ps1`
+  (x86 late-binding); harness run `20261012-023201` 3/3 OK; CLI help
+  + probe manifest notes updated.
+
 - **P0 probe iteration 20 (BUSY-002/003/004 sweep)**: `_Collection` return
   enumeration **live-proven** (`fin-years-enumerated` → `[2026]`;
   `comp-list-enumerated` → Count=2, items = nested dispatch = next deep-walk
