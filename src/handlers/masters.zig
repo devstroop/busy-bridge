@@ -200,6 +200,11 @@ pub const ListOpts = struct {
     /// previous page — the last-shown Name. Rows resume strictly after it
     /// (ORDER BY Name ASC), so pages never overlap or skip.
     cursor: ?[]const u8 = null,
+    /// SQL-side exact-prefix filter (`AND Name LIKE '<p>*'` — DAO's `*`
+    /// wildcard, probe-verified WP2). seriesList passes the type partition
+    /// so keyset pages contain only matching rows: `has_more` stays honest
+    /// and a filtered page is never empty (WP1 review F3).
+    name_prefix: ?[]const u8 = null,
 };
 
 /// Required string field or BadArgs with a precise message.

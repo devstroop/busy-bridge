@@ -132,7 +132,7 @@ const tail = [_]Op{
         .route = "GET /op/series",
         .cli = "op list series [--type T]",
         .params = "type? (canonical voucher type, e.g. sale — strips the stored 2-digit prefix), limit (default 100), q (name substring)",
-        .summary = "voucher series: {code, name, parent} — raw stored names unless type given (then prefix-free)",
+        .summary = "voucher series: {code, name, parent} — raw stored names unless type given (then prefix-free; type pages SQL-side, never empty while has_more)",
     },
     .{
         .name = "list-vouchers",
