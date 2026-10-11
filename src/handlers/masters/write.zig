@@ -115,11 +115,12 @@ pub fn create(sess: *Session, alloc: Allocator, kind: Kind, fields: *const json.
         else => return err,
     };
     defer doc_fields.deinit(alloc);
+    const wrap_name = m.wrapElement(kind) orelse {
+        sess.setErr("create {s}: writes for this kind are not wired yet (reads only)", .{m.kindName(kind)});
+        return error.BadArgs;
+    };
     var doc: std.ArrayList(json.Value.Entry) = .empty;
-    try common.put(alloc, &doc, switch (kind) {
-        .account => "Account",
-        .item => "Item",
-    }, doc_fields); // ownership moves into doc
+    try common.put(alloc, &doc, wrap_name, doc_fields); // ownership moves into doc
     doc_fields = .{ .null = {} }; // neutered — `doc` frees it now
 
     var doc_val = try common.objFrom(alloc, &doc);

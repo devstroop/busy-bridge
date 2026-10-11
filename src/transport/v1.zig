@@ -9,11 +9,13 @@
 //! Path grammar (after the /v1 prefix, split BEFORE percent-decoding, so
 //! names may contain encoded '/' or spaces):
 //!   GET    /v1                      surface index
-//!   GET    /v1/accounts|items       list  (?limit= &cursor= &q=)
-//!   GET    /v1/accounts|items/{name}       one by exact business name
-//!   POST   /v1/accounts|items             create  (JSON body)
-//!   PUT    /v1/accounts|items/{name}      update  (name from path wins)
-//!   DELETE /v1/accounts|items/{name}      delete
+//!   GET    /v1/{kind}s|{kind}        list (?limit= &cursor= &q=) and one by
+//!   GET    /v1/{kind}s|{kind}/{name}     exact business name — every master
+//!                                    kind (accounts, items, units, sale-types…)
+//!   POST   /v1/{kind}s               create (JSON body); kinds whose write
+//!   PUT    /v1/{kind}s/{name}            ops do not exist yet answer
+//!   DELETE /v1/{kind}s/{name}            400 unknown write op (fail closed)
+//!   GET    /v1/series?type=          voucher series (typed: prefix stripped)
 //!   GET    /v1/vouchers             list  (?type= &limit= &cursor=)
 //!   GET    /v1/vouchers/{code}      one by VchCode
 //!   POST   /v1/vouchers             post  (JSON body)
@@ -172,9 +174,10 @@ fn routeInner(
     if ((rest.len == 0 or eql(rest, "/")) and eql(verb, "GET")) {
         var v: std.ArrayList(json.Value.Entry) = .empty;
         try ops.common.put(alloc, &v, "api", .{ .str = try alloc.dupe(u8, "busy-bridge/v1") });
-        const resources = [_][]const u8{ "accounts", "items", "vouchers", "reports" };
+        const plurs = ops.masters.pluralNames();
         var arr: std.ArrayList(json.Value) = .empty;
-        for (resources) |r| try arr.append(alloc, .{ .str = try alloc.dupe(u8, r) });
+        for (plurs) |r| try arr.append(alloc, .{ .str = try alloc.dupe(u8, r) });
+        for ([_][]const u8{ "series", "vouchers", "reports" }) |r| try arr.append(alloc, .{ .str = try alloc.dupe(u8, r) });
         try ops.common.put(alloc, &v, "resources", .{ .arr = try arr.toOwnedSlice(alloc) });
         const obj = try ops.common.objFrom(alloc, &v);
         return okResult(alloc, fmt, "v1/index", &obj);
@@ -183,9 +186,14 @@ fn routeInner(
     const seg = splitPath(rest);
     const key: ?[]u8 = if (seg.key) |k| try urlDecode(alloc, k) else null;
 
-    // ---- masters (accounts / items) ----
-    if (eql(seg.resource, "accounts") or eql(seg.resource, "items")) {
-        const kind: ops.masters.Kind = if (eql(seg.resource, "accounts")) .account else .item;
+    // ---- masters (accounts / items + every picker kind) ----
+    if (ops.masters.kindPath(seg.resource)) |kp| {
+        const kind: ops.masters.Kind = kp.kind;
+        // envelope resource names: {v1/plurals} for lists, {v1/sing} for one
+        var list_res_buf: [64]u8 = undefined;
+        const list_res: []const u8 = std.fmt.bufPrint(&list_res_buf, "v1/{s}", .{kp.plur}) catch "v1/masters";
+        var one_res_buf: [64]u8 = undefined;
+        const one_res: []const u8 = std.fmt.bufPrint(&one_res_buf, "v1/{s}", .{kp.sing}) catch "v1/master";
         if (key == null and eql(verb, "GET")) {
             const limit = listLimit(sess, alloc, query) catch |err|
                 return errRoute(alloc, fmt, sess, err);
@@ -193,26 +201,27 @@ fn routeInner(
             const q = try qparam(alloc, query, "q");
             const v = ops.masters.list(sess, alloc, kind, .{ .limit = limit, .q = q, .cursor = cursor }) catch |err|
                 return errRoute(alloc, fmt, sess, err);
-            return okResult(alloc, fmt, if (kind == .account) "v1/accounts" else "v1/items", &v);
+            return okResult(alloc, fmt, list_res, &v);
         }
         if (key != null and eql(verb, "GET")) {
             const v = ops.masters.get(sess, alloc, kind, key.?) catch |err|
                 return errRoute(alloc, fmt, sess, err);
-            return okResult(alloc, fmt, if (kind == .account) "v1/account" else "v1/item", &v);
+            return okResult(alloc, fmt, one_res, &v);
         }
         if (key == null and eql(verb, "POST")) {
             const parsed = json.parse(alloc, body) catch
                 return errResult(alloc, fmt, "400", "invalid_json", "invalid JSON body");
-            const op_name = if (kind == .account) "create-account" else "create-item";
+            const op_name = try std.fmt.allocPrint(alloc, "create-{s}", .{kp.sing});
+            defer alloc.free(op_name);
             const v = ops.exec.run(sess, alloc, op_name, &parsed) catch |err|
                 return errRoute(alloc, fmt, sess, err);
-            return okResult(alloc, fmt, if (kind == .account) "v1/account" else "v1/item", &v);
+            return okResult(alloc, fmt, one_res, &v);
         }
         if (key != null and (eql(verb, "PUT") or eql(verb, "DELETE"))) {
             var ne: std.ArrayList(json.Value.Entry) = .empty;
             try ops.common.put(alloc, &ne, "name", .{ .str = try alloc.dupe(u8, key.?) });
             const name_obj = try ops.common.objFrom(alloc, &ne);
-            const op_name_base: []const u8 = if (kind == .account) "account" else "item";
+            const op_name_base: []const u8 = kp.sing;
             if (eql(verb, "PUT")) {
                 const parsed = json.parse(alloc, body) catch
                     return errResult(alloc, fmt, "400", "invalid_json", "invalid JSON body");
@@ -222,13 +231,28 @@ fn routeInner(
                 defer alloc.free(op_name);
                 const v = ops.exec.run(sess, alloc, op_name, &merged) catch |err|
                     return errRoute(alloc, fmt, sess, err);
-                return okResult(alloc, fmt, if (kind == .account) "v1/account" else "v1/item", &v);
+                return okResult(alloc, fmt, one_res, &v);
             }
             const op_name = try std.fmt.allocPrint(alloc, "delete-{s}", .{op_name_base});
             defer alloc.free(op_name);
             const v = ops.exec.run(sess, alloc, op_name, &name_obj) catch |err|
                 return errRoute(alloc, fmt, sess, err);
-            return okResult(alloc, fmt, if (kind == .account) "v1/account" else "v1/item", &v);
+            return okResult(alloc, fmt, one_res, &v);
+        }
+        return errResult(alloc, fmt, "404", "not_found", "unknown /v1 route (see GET /v1)");
+    }
+
+    // ---- voucher series (picker list; type-partitioned names) ----
+    if (eql(seg.resource, "series")) {
+        if (key == null and eql(verb, "GET")) {
+            const limit = listLimit(sess, alloc, query) catch |err|
+                return errRoute(alloc, fmt, sess, err);
+            const cursor = try qparam(alloc, query, "cursor");
+            const q = try qparam(alloc, query, "q");
+            const type_name = try qparam(alloc, query, "type");
+            const v = ops.masters.seriesList(sess, alloc, .{ .limit = limit, .q = q, .cursor = cursor, .type_name = type_name }) catch |err|
+                return errRoute(alloc, fmt, sess, err);
+            return okResult(alloc, fmt, "v1/series", &v);
         }
         return errResult(alloc, fmt, "404", "not_found", "unknown /v1 route (see GET /v1)");
     }

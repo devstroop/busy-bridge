@@ -39,32 +39,53 @@ pub fn routeOps(
         const v = try ops.common.objFrom(ralloc, &result);
         return sh.opOk(ralloc, fmt, "catalog", &v);
     }
-    if (eql(verb, "GET") and eql(path, "/op/accounts") or (eql(verb, "GET") and eql(path, "/op/items"))) {
-        const kind: ops.masters.Kind = if (eql(path, "/op/accounts")) .account else .item;
-        const limit = blk: {
-            if (try sh.qparam(ralloc, query, "limit")) |raw|
-                break :blk std.fmt.parseInt(usize, raw, 10) catch
-                    return sh.badReq(ralloc, fmt, "bad_args", "invalid limit (non-negative integer; 0 = unlimited)");
-            break :blk @as(usize, 100);
-        };
-        const q = try sh.qparam(ralloc, query, "q");
-        const v = ops.masters.list(ctx.sess, ralloc, kind, .{ .limit = limit, .q = q }) catch |err| {
-            if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
-            return err;
-        };
-        const name = if (kind == .account) "list-accounts" else "list-items";
-        return sh.opOk(ralloc, fmt, name, &v);
-    }
-    if (eql(verb, "GET") and (eql(path, "/op/account") or eql(path, "/op/item"))) {
-        const kind: ops.masters.Kind = if (eql(path, "/op/account")) .account else .item;
-        const raw_name = (try sh.qparam(ralloc, query, "name")) orelse
-            return sh.badReq(ralloc, fmt, "bad_args", "missing \"name\" (exact business name)");
-        const v = ops.masters.get(ctx.sess, ralloc, kind, raw_name) catch |err| {
-            if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
-            return err;
-        };
-        const name = if (kind == .account) "get-account" else "get-item";
-        return sh.opOk(ralloc, fmt, name, &v);
+    // ---- master reads: GET /op/<kind>s (list) | GET /op/<kind>?name= ----
+    // One arm for every routed kind (masters.kinds): plural = list, singular
+    // = get. vouchers/reports/series and typos fall through to their arms.
+    if (eql(verb, "GET") and std.mem.startsWith(u8, path, "/op/") and
+        std.mem.indexOfScalar(u8, path["/op/".len..], '/') == null)
+    {
+        const seg = path["/op/".len..];
+        if (ops.masters.kindPath(seg)) |kp| {
+            if (kp.list) {
+                const limit = blk: {
+                    if (try sh.qparam(ralloc, query, "limit")) |raw|
+                        break :blk std.fmt.parseInt(usize, raw, 10) catch
+                            return sh.badReq(ralloc, fmt, "bad_args", "invalid limit (non-negative integer; 0 = unlimited)");
+                    break :blk @as(usize, 100);
+                };
+                const q = try sh.qparam(ralloc, query, "q");
+                const v = ops.masters.list(ctx.sess, ralloc, kp.kind, .{ .limit = limit, .q = q }) catch |err| {
+                    if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+                    return err;
+                };
+                const name = try std.fmt.allocPrint(ralloc, "list-{s}", .{kp.plur});
+                return sh.opOk(ralloc, fmt, name, &v);
+            }
+            const raw_name = (try sh.qparam(ralloc, query, "name")) orelse
+                return sh.badReq(ralloc, fmt, "bad_args", "missing \"name\" (exact business name)");
+            const v = ops.masters.get(ctx.sess, ralloc, kp.kind, raw_name) catch |err| {
+                if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+                return err;
+            };
+            const name = try std.fmt.allocPrint(ralloc, "get-{s}", .{kp.sing});
+            return sh.opOk(ralloc, fmt, name, &v);
+        }
+        if (eql(seg, "series")) {
+            const limit = blk: {
+                if (try sh.qparam(ralloc, query, "limit")) |raw|
+                    break :blk std.fmt.parseInt(usize, raw, 10) catch
+                        return sh.badReq(ralloc, fmt, "bad_args", "invalid limit (non-negative integer; 0 = unlimited)");
+                break :blk @as(usize, 100);
+            };
+            const q = try sh.qparam(ralloc, query, "q");
+            const type_name = try sh.qparam(ralloc, query, "type");
+            const v = ops.masters.seriesList(ctx.sess, ralloc, .{ .limit = limit, .q = q, .type_name = type_name }) catch |err| {
+                if (try sh.opErr(ralloc, fmt, ctx.sess, err)) |r| return r;
+                return err;
+            };
+            return sh.opOk(ralloc, fmt, "list-series", &v);
+        }
     }
     if (eql(verb, "GET") and eql(path, "/op/vouchers")) {
         const limit = blk: {

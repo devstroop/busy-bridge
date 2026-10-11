@@ -13,9 +13,39 @@ pub const Op = struct {
     summary: []const u8,
 };
 
-/// M1 — reads. Writes (M2) and reports (M3) append here; the doc page and
-/// GET /op regenerate from this table.
-pub const all = [_]Op{
+/// M1 — reads. Writes (M2) and reports (M3) live in `tail`; the per-kind
+/// master read rows (list-X / get-X) are GENERATED from `masters.kinds`
+/// so a new kind in that table lights up the catalog, `op catalog` and
+/// docs/operations.md at once. The doc page and GET /op regenerate from
+/// this table.
+const masters = @import("masters.zig");
+
+fn kindReadOps() [masters.routedCount() * 2]Op {
+    @setEvalBranchQuota(100_000);
+    var out: [masters.routedCount() * 2]Op = undefined;
+    var i: usize = 0;
+    for (masters.kinds) |k| {
+        if (!k.route) continue;
+        out[i] = .{
+            .name = "list-" ++ k.plur,
+            .route = "GET /op/" ++ k.plur,
+            .cli = "op list " ++ k.plur,
+            .params = "limit (0 = unlimited, default 100), q (case-insensitive name substring)",
+            .summary = "list " ++ k.sing ++ " masters: {code, name, parent{code,name}}",
+        };
+        out[i + 1] = .{
+            .name = "get-" ++ k.sing,
+            .route = "GET /op/" ++ k.sing ++ "?name=",
+            .cli = "op get " ++ k.sing ++ " <name>",
+            .params = "name (exact business name)",
+            .summary = "one " ++ k.sing ++ ": identity + parent + full document tree",
+        };
+        i += 2;
+    }
+    return out;
+}
+
+const head = [_]Op{
     .{
         .name = "catalog",
         .route = "GET /op",
@@ -23,33 +53,15 @@ pub const all = [_]Op{
         .params = "none",
         .summary = "this catalog (plain text on CLI, JSON/XML over HTTP)",
     },
+};
+
+const tail = [_]Op{
     .{
-        .name = "list-accounts",
-        .route = "GET /op/accounts",
-        .cli = "op list accounts",
-        .params = "limit (0 = unlimited, default 100), q (case-insensitive name substring)",
-        .summary = "list account masters: {code, name, parent{code,name}}",
-    },
-    .{
-        .name = "get-account",
-        .route = "GET /op/account?name=",
-        .cli = "op get account <name>",
-        .params = "name (exact business name)",
-        .summary = "one account: identity + parent + full document tree",
-    },
-    .{
-        .name = "list-items",
-        .route = "GET /op/items",
-        .cli = "op list items",
-        .params = "limit (default 100), q (name substring)",
-        .summary = "list item masters: {code, name, parent{code,name}}",
-    },
-    .{
-        .name = "get-item",
-        .route = "GET /op/item?name=",
-        .cli = "op get item <name>",
-        .params = "name (exact business name)",
-        .summary = "one item: identity + parent group + full document tree",
+        .name = "list-series",
+        .route = "GET /op/series",
+        .cli = "op list series [--type T]",
+        .params = "type? (canonical voucher type, e.g. sale — strips the stored 2-digit prefix), limit (default 100), q (name substring)",
+        .summary = "voucher series: {code, name, parent} — raw stored names unless type given (then prefix-free)",
     },
     .{
         .name = "list-vouchers",
@@ -176,6 +188,8 @@ pub const all = [_]Op{
     },
 };
 
+pub const all = head ++ kindReadOps() ++ tail;
+
 pub fn find(name: []const u8) ?*const Op {
     for (&all) |*op| if (std.mem.eql(u8, op.name, name)) return op;
     return null;
@@ -228,4 +242,10 @@ test "catalog is well-formed" {
     try testing.expect(std.mem.indexOf(u8, md, "| `get-voucher` | `GET /op/voucher?code=` |") != null);
     try testing.expect(std.mem.indexOf(u8, md, "op list vouchers") != null);
     try testing.expect(std.mem.indexOf(u8, md, "POST /op/batch") != null);
+    // generated per-kind rows + the series list row
+    try testing.expect(find("list-units") != null);
+    try testing.expect(find("get-unit") != null);
+    try testing.expect(find("get-tax-category") != null);
+    try testing.expect(find("list-series") != null);
+    try testing.expect(std.mem.indexOf(u8, md, "GET /op/tax-categories") != null);
 }

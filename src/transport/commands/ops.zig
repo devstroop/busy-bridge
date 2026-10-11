@@ -26,8 +26,8 @@ const fail = cmd.fail;
 
 /// `busy-bridge op ...` — ERP operations facade (issue #7): normalized
 /// reads with mechanical internals; raw `call`/`query` remain the escape
-/// hatch. Positionals: `catalog`, `list <accounts|items|vouchers>`,
-/// `get <account|item|voucher> <key>`; flags: --limit --q --type.
+/// hatch. Positionals: `catalog`, `list <plural kind|series|vouchers>`,
+/// `get <singular kind|voucher> <key>`; flags: --limit --q --type.
 pub fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     // positional words (skip flags + their values)
     var pos: std.ArrayList([]const u8) = .empty;
@@ -44,7 +44,7 @@ pub fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
         }
     }
     if (pos.items.len == 0)
-        return fail(io, alloc, fmt, "bad_args", "usage: busy-bridge op <catalog | list <accounts|items|vouchers> [--limit N] [--q X] [--type NAME] | get <account|item|voucher> <key> | create|update <account|item> <name> [--json {..}] | delete <account|item> <name> | post --json {..} | batch --json [..]>");
+        return fail(io, alloc, fmt, "bad_args", "usage: busy-bridge op <catalog | list <plural kind | series | vouchers> [--limit N] [--q X] [--type NAME] | get <singular kind | voucher> <key> | create|update <account|item> <name> [--json {..}] | delete <account|item> <name> | post --json {..} | batch --json [..]>");
 
     const verb = pos.items[0];
     if (eql(verb, "catalog")) {
@@ -71,40 +71,58 @@ pub fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     };
 
     // validate everything BEFORE touching COM
-    const OpKind = enum { list_accounts, list_items, list_vouchers, get_account, get_item, get_voucher };
+    const OpKind = enum { list_masters, list_series, list_vouchers, get_masters, get_voucher };
     var opk: OpKind = undefined;
+    var kp: ?ops.masters.KindPath = null;
     var key: []const u8 = "";
     var key_int: i64 = 0;
     if (eql(verb, "list")) {
         if (pos.items.len < 2)
-            return fail(io, alloc, fmt, "bad_args", "op list needs a kind: accounts | items | vouchers");
+            return fail(io, alloc, fmt, "bad_args", "op list needs a plural kind (accounts, items, units, …), series or vouchers — see op catalog");
         const k = pos.items[1];
-        if (eql(k, "accounts")) opk = .list_accounts else if (eql(k, "items")) opk = .list_items else if (eql(k, "vouchers")) opk = .list_vouchers else return fail(io, alloc, fmt, "bad_args", "unknown list kind (use accounts, items or vouchers)");
+        if (eql(k, "vouchers")) {
+            opk = .list_vouchers;
+        } else if (eql(k, "series")) {
+            opk = .list_series;
+        } else if (ops.masters.kindPath(k)) |p| {
+            if (!p.list)
+                return fail(io, alloc, fmt, "bad_args", "op list takes the plural kind (units, not unit) — see op catalog");
+            opk = .list_masters;
+            kp = p;
+        } else return fail(io, alloc, fmt, "bad_args", "unknown list kind — see op catalog (GET /op)");
     } else if (eql(verb, "get")) {
         if (pos.items.len < 3)
-            return fail(io, alloc, fmt, "bad_args", "op get needs a kind and a key: account|item <name> | voucher <code>");
+            return fail(io, alloc, fmt, "bad_args", "op get needs a kind and a key: <singular kind> <name> | voucher <code>");
         const k = pos.items[1];
         key = pos.items[2];
-        if (eql(k, "account")) {
-            opk = .get_account;
-        } else if (eql(k, "item")) {
-            opk = .get_item;
-        } else if (eql(k, "voucher")) {
+        if (eql(k, "voucher")) {
             opk = .get_voucher;
             key_int = std.fmt.parseInt(i64, key, 10) catch
                 return fail(io, alloc, fmt, "bad_args", "voucher key must be an integer VchCode");
+        } else if (ops.masters.kindPath(k)) |p| {
+            if (p.list)
+                return fail(io, alloc, fmt, "bad_args", "op get takes the singular kind (unit, not units) — see op catalog");
+            opk = .get_masters;
+            kp = p;
         } else {
-            return fail(io, alloc, fmt, "bad_args", "unknown get kind (use account, item or voucher)");
+            return fail(io, alloc, fmt, "bad_args", "unknown get kind — see op catalog (GET /op)");
         }
     } else {
         return fail(io, alloc, fmt, "bad_args", "unknown op verb (use catalog, list or get)");
     }
+    var op_name_heap: ?[]u8 = null;
+    defer if (op_name_heap) |o| alloc.free(o);
     const op_name: []const u8 = switch (opk) {
-        .list_accounts => "list-accounts",
-        .list_items => "list-items",
+        .list_masters => blk: {
+            op_name_heap = try std.fmt.allocPrint(alloc, "list-{s}", .{kp.?.plur});
+            break :blk op_name_heap.?;
+        },
+        .list_series => "list-series",
         .list_vouchers => "list-vouchers",
-        .get_account => "get-account",
-        .get_item => "get-item",
+        .get_masters => blk: {
+            op_name_heap = try std.fmt.allocPrint(alloc, "get-{s}", .{kp.?.sing});
+            break :blk op_name_heap.?;
+        },
         .get_voucher => "get-voucher",
     };
 
@@ -126,11 +144,10 @@ pub fn cmdOp(io: Io, alloc: Allocator, cli: Cli, fmt: Format) !u8 {
     };
 
     const result = switch (opk) {
-        .list_accounts => ops.masters.list(&sess, alloc, .account, .{ .limit = limit, .q = cli.get("--q") }),
-        .list_items => ops.masters.list(&sess, alloc, .item, .{ .limit = limit, .q = cli.get("--q") }),
+        .list_masters => ops.masters.list(&sess, alloc, kp.?.kind, .{ .limit = limit, .q = cli.get("--q") }),
+        .list_series => ops.masters.seriesList(&sess, alloc, .{ .limit = limit, .q = cli.get("--q"), .type_name = cli.get("--type") }),
         .list_vouchers => ops.vouchers.list(&sess, alloc, .{ .type_name = cli.get("--type"), .limit = limit }),
-        .get_account => ops.masters.get(&sess, alloc, .account, key),
-        .get_item => ops.masters.get(&sess, alloc, .item, key),
+        .get_masters => ops.masters.get(&sess, alloc, kp.?.kind, key),
         .get_voucher => ops.vouchers.get(&sess, alloc, key_int),
     } catch |err| {
         var cb: [64]u8 = undefined;

@@ -6,6 +6,23 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **WP1 picker reads: every master kind + voucher series over `op` CLI,
+  `/op` and `/v1`** (app picker surface): `handlers/masters.zig` grows a
+  single `kinds` registry (route words, constants name, wrapper element;
+  `route=false` for internal kinds) — 12 routed kinds (accounts, items,
+  account/item-groups, units, unit-conversions, bill-sundries, stores,
+  sale/purchase-types, boms, tax-categories). `kindPath` drives singular/
+  plural dispatch on `GET /op/<kind>s|<kind>?name=`, the `/v1` arms and
+  the `GET /v1` index; catalog rows (list-X/get-X) are **generated** from
+  the table (`docs/operations.md` regenerated) and the CLI accepts any
+  kind. **Series**: `op list series [--type T]` / `GET /op|/v1/series
+  ?type=T` filter BUSY's stored `<2-digit type><name>` partition (SALE
+  stores `09ZigVch9`) and strip the prefix; without `type`, raw stored
+  names. Kinds without write ops fail closed (400 unknown write op /
+  precise create BadArgs). Tests 139 → 142; live suites 06 + 11
+  re-verified, server-side suite `14-master-kinds.ps1` (21 checks) green
+  vs COMP0001.
+
 - **Split track — bridge = raw COM binding** (bridge/server separation,
   issue #42 track): `src/lib.zig` is the new **package root** for
   downstream Zig consumers (busy-server now, busy-mcp/busy-cli later).

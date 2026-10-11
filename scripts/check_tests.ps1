@@ -27,7 +27,8 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 # 95 -> 139 (main 95 + lib_surface_test 44: src/lib.zig package surface
 #            smoke suites + the pure core/util suites its re-exports pull
 #            in — same tests the main aggregation runs, plus 3 new).
-$Expected = 139
+#          142 (WP1 picker kinds: kindPath + typeCode table tests, seriesOf).
+$Expected = 142
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)
