@@ -6,6 +6,16 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **Series paging fix (WP1 review F3) + prefix tests (F5)** (mirror of
+  busy-server): `seriesList` filters the voucher-type partition SQL-side
+  (`ListOpts.name_prefix` → `AND Name LIKE '09*'` — DAO's `*` wildcard,
+  probe-verified in WP2) so keyset pages hold only matching rows — a
+  filtered page is never empty while `has_more=true`. Pure
+  `seriesPrefix` (9 → `"09"`, 10 → `"10"`, out-of-range → null) +
+  `prefixClause` unit tests; `docs/operations.md` regenerated (list-series
+  summary notes SQL-side paging). Tests 144 → 146; live suites 14 (with
+  new cursor-follow checks), 06, 11 green vs COMP0001.
+
 - **WP2 master writes: per-kind create/update/delete over the registry**
   (mirrors busy-server PR): `masters/fields.zig` — one probe-verified field
   map per kind (request key -> BUSY element + str/num/bool; booleans
