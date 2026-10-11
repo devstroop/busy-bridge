@@ -3,6 +3,7 @@
 #   core/**      -> + core/**          (never transport)
 #   handlers/**  -> + handlers/** + core/** + util/**   (ERP facade, never transport)
 #   transport/** -> + transport/** + handlers/**
+#   lib/**       -> + core/** + util/** (package root for busy-server; never handlers/transport)
 #   main.zig     -> transport/** only  (never core/util directly)
 # Exits non-zero and lists violations when a layer imports across its border.
 $ErrorActionPreference = 'Stop'
@@ -13,6 +14,7 @@ $rules = @{
     'core'      = @('util', 'core')
     'handlers'  = @('util', 'core', 'handlers')
     'transport' = @('util', 'core', 'handlers', 'transport')
+    'lib'       = @('util', 'core')  # package root: re-exports core+util only
 }
 
 $violations = New-Object System.Collections.Generic.List[string]
