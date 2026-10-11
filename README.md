@@ -294,9 +294,9 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
 
 | | |
 |---|---|
-| CLI (reads) | `busy-bridge op catalog` · `op list accounts\|items\|vouchers [--limit N] [--q X] [--type NAME]` · `op get account\|item <name>` / `op get voucher <code>` |
+| CLI (reads) | `busy-bridge op catalog` · `op list <kind…s>\|series\|vouchers [--limit N] [--q X] [--type NAME]` (any master kind: `units`, `sale-types`, `account-groups`, …) · `op get <kind…> <name>` / `op get voucher <code>` · `op list series [--type T]` |
 | CLI (writes) | `op create\|update <account\|item> <name> --json '{..}'` · `op delete <account\|item> <name>` / `op delete voucher <code>` · `op post --json '{..}'` · `op batch --json '[..]'` (`--json-b64` for PowerShell) |
-| HTTP (reads) | `GET /op` (catalog) · `/op/accounts[?limit=&q=]` `/op/account?name=` · `/op/items[?limit=&q=]` `/op/item?name=` · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` |
+| HTTP (reads) | `GET /op` (catalog) · `/op/<kind>s[?limit=&q=]` `/op/<kind>?name=` for **every** master kind (accounts, items, units, sale-types, …) · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` · `GET /op/series[?type=&limit=&q=]` · same paths under `/v1` (with `&cursor=`) + `GET /v1` resource index |
 | HTTP (writes) | `POST /op/account` · `PUT /op/account?name=` · `DELETE /op/account?name=` (item routes identical) · `POST /op/voucher` · `DELETE /op/voucher?code=` · `POST /op/batch` |
 | Reports (CLI) | `op report account-balance --name X --from D --to D` · `op report group-balance --group X --from D --to D` · `op report trial-balance --from D --to D` · `op report stock-status --date D [--item X] [--q F] [--limit N]` |
 | Reports (HTTP) | `GET /op/report/{account-balance,group-balance,trial-balance,stock-status}` with the same names as query params |
@@ -309,7 +309,11 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
   parent:{code,name}}` (parent/group names batch-resolved), vouchers add
   `type:{code,name}` (constants table), `series`/`party` (Master1
   lookups) and `date` in ISO `YYYY-MM-DD`. Fetch ops add `doc` — the
-  full BUSY document as a JSON tree, never an XML blob.
+  full BUSY document as a JSON tree, never an XML blob. The `kind` field
+  echoes the master kind (`unit`, `sale-type`, …); voucher **series**
+  are BUSY's type-partitioned names (`09ZigVch9` = SALE), so
+  `?type=sale` filters the partition and strips the 2-digit prefix —
+  bare `ZigVch9` in, bare `ZigVch9` out.
 - **Parameters**: `limit` (default 100, `0` = unlimited, response gets
   `"truncated":true` when capped), `q` = case-insensitive name substring
   (client-side — BUSY's `LIKE` silently returns empty), `type` =

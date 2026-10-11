@@ -8,6 +8,7 @@ const json = @import("../../util/json.zig");
 const xml = @import("../../util/xml.zig");
 const helpers = @import("../../util/helpers.zig");
 const com = @import("../../core/com.zig");
+const constants = @import("../../core/constants.zig");
 const common = @import("../common.zig");
 const m = @import("../masters.zig");
 
@@ -205,4 +206,110 @@ pub fn get(sess: *Session, alloc: Allocator, kind: Kind, name: []const u8) !json
     try common.put(alloc, &out, "parent", parent_val);
     try common.put(alloc, &out, "doc", doc_val);
     return common.objFrom(alloc, &out);
+}
+
+/// Voucher-series options: the `list` shape plus BUSY's type-partitioned
+/// name handling (see `seriesList`).
+pub const SeriesOpts = struct {
+    limit: usize = 100,
+    q: ?[]const u8 = null,
+    cursor: ?[]const u8 = null,
+    /// Canonical voucher type (e.g. `sale`): rows are filtered to that
+    /// type's partition and the stored 2-digit prefix is stripped from
+    /// `name`. Null returns names exactly as stored (`09ZigVch9`).
+    type_name: ?[]const u8 = null,
+};
+
+/// Pure prefix match: the bare series name when `name` starts with
+/// `prefix`, else null. Live fixture: `CreateVchSeries("ZigVch9", 9)`
+/// stores `09ZigVch9` — BUSY partitions series by voucher type, so all
+/// rows of one type sort together under their 2-digit prefix.
+pub fn seriesOf(name: []const u8, prefix: []const u8) ?[]const u8 {
+    if (prefix.len == 0 or !std.mem.startsWith(u8, name, prefix)) return null;
+    return name[prefix.len..];
+}
+
+/// Voucher series (MasterType 21) as a picker list: the same envelope as
+/// `list` (`{kind:"series", count, truncated, items, page}`), optionally
+/// filtered to one voucher type with prefix-free names. Paging: the
+/// keyset cursor runs over the RAW stored names, so a page may show fewer
+/// matches than `limit` while `page.has_more` stays true — keep paging
+/// until `has_more` is false.
+pub fn seriesList(sess: *Session, alloc: Allocator, opts: SeriesOpts) !json.Value {
+    var prefix: ?[]u8 = null;
+    defer if (prefix) |p| alloc.free(p);
+    if (opts.type_name) |tn| {
+        const code = constants.voucherCode(tn) orelse {
+            sess.setErr("unknown voucher type '{s}' (canonical name, e.g. sale)", .{tn});
+            return error.BadArgs;
+        };
+        // BUSY stores a zero-padded 2-digit type prefix (SALE=9 -> "09").
+        // Manual digits keep the contract explicit (std.fmt width specs
+        // shifted in 0.17) and the code range is fixed by the table.
+        if (code < 0 or code > 99) {
+            sess.setErr("voucher type '{s}' has an out-of-range code", .{tn});
+            return error.BadArgs;
+        }
+        const tens: u8 = @intCast(@divTrunc(code, 10));
+        const ones: u8 = @intCast(@mod(code, 10));
+        prefix = try alloc.dupe(u8, &[_]u8{ '0' + tens, '0' + ones });
+    }
+    var v = try list(sess, alloc, .voucher_series, .{ .limit = opts.limit, .q = opts.q, .cursor = opts.cursor });
+    errdefer v.deinit(alloc);
+    const p = prefix orelse return v;
+    if (v != .obj) return error.UnexpectedRows;
+
+    // mutable entry pointers (Value.get is const by contract)
+    var items_e: ?*json.Value.Entry = null;
+    var count_e: ?*json.Value.Entry = null;
+    for (v.obj) |*e| {
+        if (std.mem.eql(u8, e.key, "items")) items_e = e;
+        if (std.mem.eql(u8, e.key, "count")) count_e = e;
+    }
+    const items_val: *json.Value = &(items_e orelse return error.UnexpectedRows).val;
+    if (items_val.* != .arr) return error.UnexpectedRows;
+    const old_arr = items_val.arr;
+    var kept: std.ArrayList(json.Value) = .empty;
+    var dropped: std.ArrayList(json.Value) = .empty;
+    defer kept.deinit(alloc);
+    defer dropped.deinit(alloc);
+    for (old_arr) |*item| {
+        if (item.* != .obj) continue;
+        var matched = false;
+        for (item.obj) |*e| {
+            if (!std.mem.eql(u8, e.key, "name")) continue;
+            if (e.val != .str) break;
+            const bare = seriesOf(e.val.str, p) orelse break;
+            if (bare.len != e.val.str.len) {
+                const owned = try alloc.dupe(u8, bare);
+                alloc.free(e.val.str);
+                e.val.str = owned;
+            }
+            matched = true;
+            break;
+        }
+        if (matched)
+            try kept.append(alloc, item.*)
+        else
+            try dropped.append(alloc, item.*); // shallow; strings stay in old_arr for now
+    }
+    const kept_len = kept.items.len;
+    // From here on nothing can fail: ownership moves, then the shell swaps.
+    const new_arr = try kept.toOwnedSlice(alloc);
+    for (dropped.items) |*d| d.deinit(alloc);
+    alloc.free(old_arr); // the slice only — kept items moved, dropped freed above
+    items_val.arr = new_arr;
+    if (count_e) |ce| {
+        if (ce.val == .int) ce.val.int = @intCast(kept_len);
+    }
+    return v;
+}
+
+test "seriesOf strips only a matching type prefix" {
+    const testing = std.testing;
+    try testing.expectEqualStrings("ZigVch9", seriesOf("09ZigVch9", "09").?);
+    try testing.expectEqualStrings("", seriesOf("09", "09").?);
+    try testing.expect(seriesOf("Main", "09") == null);
+    try testing.expect(seriesOf("09ZigVch9", "08") == null);
+    try testing.expect(seriesOf("09ZigVch9", "") == null);
 }
