@@ -612,6 +612,39 @@ surfaces**; unmapped trial-balance stays the fail-closed 403 proof.
 App-report mapping status: ledger ✓ day-book ✓; trial-balance,
 stock-status, balances remain unmapped (admin-only) until granted +
 swept.
+## 21. Iteration 21 — the company picker DECODED: GetCompList items are nested Collections, recursed live (2026-10-12)
+
+Follows §20's finding (GetCompList items were `<dispatch>` at the M1
+boundary). Discovery via x86 late-binding (`tests/probe/comp-item-shape.ps1` —
+BUSY COM is 32-bit; 64-bit PS:
+REGDB_E_CLASSNOTREG), then fixed in the bridge:
+
+- **The items are themselves VB6 Collections** (`Add/Count/Item/
+  Remove/_NewEnum`) — GetCompList is a collection-of-collections.
+  Each inner collection is a **10-field company row**:
+  `[compName, compCode, fyStart(DD/MM/YYYY), i2flag, "", "",
+  companyGuid, "", "", ""]` — live on this box:
+  `["DEMO","COMP0001","01/04/2026",1,"","","80181626FFC04A2AAEE776D830240EC2","","",""]`
+  (+ identical COMP0002 row; the two empties pairs are
+  presumably spare/unused slots — no schema doc found).
+- **Bridge fix** (`core/com/collection.zig`): `toJson` now recurses
+  VT_DISPATCH `Item()` results that satisfy the Collection contract,
+  bounded by `max_depth = 3` (cycle-safe). Fail-soft: a dispatch that
+  does not satisfy the contract, or sits past the depth cap, still
+  surfaces as the `"<dispatch>"` string — one odd item cannot fail the
+  surrounding enumeration (`sess.clearErr()` + fallback). Recursion
+  needed an **explicit `WalkError` set** (the mutual
+  itemAt↔toJsonDepth inferred-error-set dependency is a compile error).
+  Ownership unchanged: `res` holds the reference during the walk, the
+  deferred `VariantClear` releases exactly once.
+- **Live**: `GetCompList --enumerate-ret` → the full 2×10 payload above
+  (0.6 s, no company open needed); `fin-years-enumerated` still
+  `[2026]` (scalar path unchanged); harness run
+  `tests/probe/results/20261012-023201/` (3/3 OK).
+
+The company/FY picker for `/v1` config surfaces is now unblocked:
+payload shape is known, decoded, and testable headless.
+
 ## 20. Iteration 20 — P0 sweep: collection returns LIVE-PROVEN, UDT config writers callable, SaveVchFromJson head pinned (2026-10-12)
 
 Reconciles BUSY-002/003/004 against the landed state (both issues'

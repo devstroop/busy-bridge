@@ -33,7 +33,7 @@ pub const Usage =
     \\  busy-bridge call --method M [--args '[..]']    invoke any COM method, JSON args,
     \\       [--prog-id P] [--comp C]                   {"$byref": v} marks out-params
     \\       [--enumerate-ret]                          VT_DISPATCH return -> JSON array
-    \\                                                  (VB6 Collection Count/Item walk)
+    \\                                                  (VB6 Collection walk; nested recursed)
     \\       [--put | --putref]                         property-set invoke (wFlags 4/8)
     \\  busy-bridge record --comp C [--out F]          record golden reads as JSONL
     \\       transcript for replay CI (needs BUSY; default F=transcript.jsonl)
