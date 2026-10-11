@@ -12,9 +12,10 @@
 //!   GET    /v1/{kind}s|{kind}        list (?limit= &cursor= &q=) and one by
 //!   GET    /v1/{kind}s|{kind}/{name}     exact business name — every master
 //!                                    kind (accounts, items, units, sale-types…)
-//!   POST   /v1/{kind}s               create (JSON body); kinds whose write
-//!   PUT    /v1/{kind}s/{name}            ops do not exist yet answer
-//!   DELETE /v1/{kind}s/{name}            400 unknown write op (fail closed)
+//!   POST   /v1/{kind}s               create (JSON body); every routed
+//!   PUT    /v1/{kind}s/{name}            kind resolves, but read-only
+//!   DELETE /v1/{kind}s/{name}            kinds answer 400 with their
+//!                                    precise fail-closed message
 //!   GET    /v1/series?type=          voucher series (typed: prefix stripped)
 //!   GET    /v1/vouchers             list  (?type= &limit= &cursor=)
 //!   GET    /v1/vouchers/{code}      one by VchCode

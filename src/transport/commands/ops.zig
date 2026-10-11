@@ -298,13 +298,13 @@ fn cmdOpWrite(io: Io, alloc: Allocator, cli: Cli, fmt: Format, pos: []const []co
             op_heap = try alloc.dupe(u8, "delete-voucher");
             op_name = op_heap.?;
         } else {
-            // create|update|delete <account|item> <name> [--json {fields}]
+            // create|update|delete <kind> <name> [--json {fields}]
             if (pos.len < 3)
-                return fail(io, alloc, fmt, "bad_args", "op needs: <create|update|delete> <account|item|voucher> <name|code> [--json {\"parent\":\"...\"} (create/update)]");
+                return fail(io, alloc, fmt, "bad_args", "op needs: <create|update|delete> <kind> <name> [--json {\"parent\":\"...\"} (create/update); kinds: see busy-bridge op catalog]");
             const kind = pos[1];
             const name = pos[2];
-            if (!(eql(kind, "account") or eql(kind, "item")))
-                return fail(io, alloc, fmt, "bad_args", "unknown kind (use account or item)");
+            if (ops.masters.kindBySing(kind) == null)
+                return fail(io, alloc, fmt, "bad_args", "unknown kind (see busy-bridge op catalog for the kind words)");
             const prefix: []const u8 = if (eql(verb, "create"))
                 "create-"
             else if (eql(verb, "update"))

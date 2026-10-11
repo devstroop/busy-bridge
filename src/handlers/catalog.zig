@@ -17,8 +17,10 @@ pub const Op = struct {
 /// master read rows (list-X / get-X) are GENERATED from `masters.kinds`
 /// so a new kind in that table lights up the catalog, `op catalog` and
 /// docs/operations.md at once. The doc page and GET /op regenerate from
-/// this table.
+/// this table. WP2: write rows are generated the same way — see
+/// `kindWriteOps` below (fields.zig supplies the per-kind keys).
 const masters = @import("masters.zig");
+const fields = @import("masters/fields.zig");
 
 fn kindReadOps() [masters.routedCount() * 2]Op {
     @setEvalBranchQuota(100_000);
@@ -41,6 +43,75 @@ fn kindReadOps() [masters.routedCount() * 2]Op {
             .summary = "one " ++ k.sing ++ ": identity + parent + full document tree",
         };
         i += 2;
+    }
+    return out;
+}
+
+/// Comptime join of a kind's writable field keys ("parent, unit").
+fn fieldKeys(kind: masters.Kind) []const u8 {
+    comptime {
+        var s: []const u8 = "";
+        for (fields.fieldsFor(kind)) |f| {
+            s = s ++ (if (s.len == 0) f.key else ", " ++ f.key);
+        }
+        return s;
+    }
+}
+
+/// create + optional update + optional delete rows per kind — generated
+/// from the same capability flags the handlers gate on: create/update for
+/// every writable kind (wrap != null), update only when the kind has
+/// fields (tax-category's only element is <Name>), delete only when the
+/// COM delete probe-verified clean. Read-only kinds (unit-conversion,
+/// bom, series) are deliberately absent: their ops answer a precise
+/// BadArgs instead of a catalog-listed success path.
+const writeRowCount: usize = blk: {
+    @setEvalBranchQuota(100_000);
+    var n: usize = 0;
+    for (masters.kinds) |k| {
+        if (k.wrap == null) continue;
+        n += 1;
+        if (fields.fieldsFor(k.kind).len > 0) n += 1;
+        if (k.deletable) n += 1;
+    }
+    break :blk n;
+};
+
+fn kindWriteOps() [writeRowCount]Op {
+    @setEvalBranchQuota(100_000);
+    var out: [writeRowCount]Op = undefined;
+    var i: usize = 0;
+    for (masters.kinds) |k| {
+        if (k.wrap == null) continue;
+        const keys = fieldKeys(k.kind);
+        out[i] = .{
+            .name = "create-" ++ k.sing,
+            .route = "POST /op/" ++ k.sing,
+            .cli = "op create " ++ k.sing ++ " <name> --json {..}",
+            .params = "name (positional or in JSON)" ++ (if (keys.len == 0) "" else ", fields: " ++ keys),
+            .summary = "create the " ++ k.sing ++ " master; returns {kind, code, name}",
+        };
+        i += 1;
+        if (fields.fieldsFor(k.kind).len > 0) {
+            out[i] = .{
+                .name = "update-" ++ k.sing,
+                .route = "PUT /op/" ++ k.sing ++ "?name=",
+                .cli = "op update " ++ k.sing ++ " <name> --json {..}",
+                .params = "name (key), fields: " ++ keys ++ " — merged into the full existing document",
+                .summary = "update by name; untouched BUSY fields preserved",
+            };
+            i += 1;
+        }
+        if (k.deletable) {
+            out[i] = .{
+                .name = "delete-" ++ k.sing,
+                .route = "DELETE /op/" ++ k.sing ++ "?name=",
+                .cli = "op delete " ++ k.sing ++ " <name>",
+                .params = "name (exact business name)",
+                .summary = "delete a " ++ k.sing ++ " master -> {code, deleted:true}",
+            };
+            i += 1;
+        }
     }
     return out;
 }
@@ -77,49 +148,9 @@ const tail = [_]Op{
         .params = "code (Tran1 VchCode)",
         .summary = "one voucher: scalars (no/date/series/party) + full document tree",
     },
-    // ---- M2 writes (issue #7): one exec dispatcher for CLI + HTTP ----
-    .{
-        .name = "create-account",
-        .route = "POST /op/account",
-        .cli = "op create account <name> --json {..}",
-        .params = "name (positional or in JSON), parent (group name)",
-        .summary = "create an account master; returns {kind, code, name, parent}",
-    },
-    .{
-        .name = "update-account",
-        .route = "PUT /op/account?name=",
-        .cli = "op update account <name> --json {..}",
-        .params = "name (key), fields: parent — merged into the full existing document",
-        .summary = "update by name; untouched BUSY fields preserved",
-    },
-    .{
-        .name = "delete-account",
-        .route = "DELETE /op/account?name=",
-        .cli = "op delete account <name>",
-        .params = "name (exact business name)",
-        .summary = "delete an account master -> {code, deleted:true}",
-    },
-    .{
-        .name = "create-item",
-        .route = "POST /op/item",
-        .cli = "op create item <name> --json {..}",
-        .params = "name, parent (group), unit (main unit)",
-        .summary = "create an item master; returns {kind, code, name, parent, unit}",
-    },
-    .{
-        .name = "update-item",
-        .route = "PUT /op/item?name=",
-        .cli = "op update item <name> --json {..}",
-        .params = "name (key), fields: parent, unit",
-        .summary = "update by name; untouched BUSY fields preserved",
-    },
-    .{
-        .name = "delete-item",
-        .route = "DELETE /op/item?name=",
-        .cli = "op delete item <name>",
-        .params = "name (exact business name)",
-        .summary = "delete an item master -> {code, deleted:true}",
-    },
+    // ---- M2 writes: create/update/delete rows per kind are GENERATED
+    // by kindWriteOps() above (registry capability flags + field maps);
+    // account/item ride the same generator as every other kind now ----
     .{
         .name = "post-voucher",
         .route = "POST /op/voucher",
@@ -188,7 +219,7 @@ const tail = [_]Op{
     },
 };
 
-pub const all = head ++ kindReadOps() ++ tail;
+pub const all = head ++ kindReadOps() ++ kindWriteOps() ++ tail;
 
 pub fn find(name: []const u8) ?*const Op {
     for (&all) |*op| if (std.mem.eql(u8, op.name, name)) return op;
@@ -248,4 +279,20 @@ test "catalog is well-formed" {
     try testing.expect(find("get-tax-category") != null);
     try testing.expect(find("list-series") != null);
     try testing.expect(std.mem.indexOf(u8, md, "GET /op/tax-categories") != null);
+    // WP2 generated write rows: wired kinds present, capability-gated
+    // kinds absent (create+update+delete for account; unit has no delete;
+    // tax-category has no update (no fields); read-only kinds none)
+    try testing.expect(find("create-account") != null);
+    try testing.expect(find("update-account") != null);
+    try testing.expect(find("delete-account") != null);
+    try testing.expect(find("create-unit") != null);
+    try testing.expect(find("update-sale-type") != null);
+    try testing.expect(find("delete-unit") == null);
+    try testing.expect(find("delete-store") == null);
+    try testing.expect(find("update-tax-category") == null);
+    try testing.expect(find("create-unit-conversion") == null);
+    try testing.expect(find("create-bom") == null);
+    try testing.expect(find("delete-series") == null);
+    try testing.expect(std.mem.indexOf(u8, md, "POST /op/store") != null);
+    try testing.expect(std.mem.indexOf(u8, md, "PUT /op/account-group?name=") != null);
 }

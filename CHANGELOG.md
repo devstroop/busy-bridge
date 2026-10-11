@@ -6,6 +6,27 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **WP2 master writes: per-kind create/update/delete over the registry**
+  (mirrors busy-server PR): `masters/fields.zig` — one probe-verified field
+  map per kind (request key -> BUSY element + str/num/bool; booleans
+  render "True"/"False", numbers decimal) replaces the `fieldsToDoc`
+  if-chain. Capability flags on `KindEntry`, probed live on BUSY 14:
+  `wrap` (create/update) set for 10 kinds; `deletable` set for the 5
+  kinds whose `DeleteMasterByCode` deletes cleanly (account, item,
+  account/item-group, tax-category) — unit, sale/purchase-type, store and
+  bill-sundry answer a precise `COM delete is not reliable … (BUSY GUI)`
+  BadArgs (BUSY 14's COM delete crashes without deleting);
+  unit-conversion/bom/series remain read-only. `kindBySing` drives exec
+  dispatch (read-only kinds answer their precise message, not the
+  `unknown write op` fallthrough), `isWriteOp`, the generated catalog
+  write rows (create/update per writable kind, delete per deletable) and
+  the CLI's `op create|update|delete <kind>` kind check; `/op` write
+  routes now cover every wired kind's singular path. Create resolves
+  BUSY's empty `$code` ByRef by exact-name SQL lookup. `docs/operations.md`
+  regenerated; DAO `LIKE` wildcard documented as `*` (not `%`). Tests
+  142 → 144; live: server suite `15-master-writes` 46 checks + regressions
+  06/07/11/14 + e2e-smoke all green.
+
 - **WP1 picker reads: every master kind + voucher series over `op` CLI,
   `/op` and `/v1`** (app picker surface): `handlers/masters.zig` grows a
   single `kinds` registry (route words, constants name, wrapper element;

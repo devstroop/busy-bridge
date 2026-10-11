@@ -108,9 +108,10 @@ of the result:
 - The bridge maps `VT_EMPTY` → machine code `no_recordset` with a hint that
   the SQL could not run (unknown table/column). Missing table and missing
   column are **indistinguishable** from the COM side.
-- **`LIKE` predicates silently return empty**: `Name LIKE 'Sundry%'` →
-  `rows:[]` even when `Name = 'Sundry Debtors'` matches. Use `=` / `IN`, or
-  fetch and filter client-side.
+- **`LIKE` with `%` silently returns empty**: `Name LIKE 'Sundry%'` →
+  `rows:[]` even when `Name = 'Sundry Debtors'` matches. The DAO wildcard
+  is `*` — `Name LIKE 'Sundry*'` works (probe-verified WP2) — or use
+  `=` / `IN`, or fetch and filter client-side.
 - `Tran1` columns: `VchCode, VchType, Date, VchNo, VchSeriesCode,
   MasterCode1/2…` (`Master1` uses `Code` — different key column).
 

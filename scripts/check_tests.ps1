@@ -28,7 +28,8 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 #            smoke suites + the pure core/util suites its re-exports pull
 #            in — same tests the main aggregation runs, plus 3 new).
 #          142 (WP1 picker kinds: kindPath + typeCode table tests, seriesOf).
-$Expected = 142
+#          144 (WP2 master writes: capability-flag test + fields.zig map test).
+$Expected = 144
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)

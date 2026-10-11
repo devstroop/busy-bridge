@@ -295,9 +295,9 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
 | | |
 |---|---|
 | CLI (reads) | `busy-bridge op catalog` · `op list <kind…s>\|series\|vouchers [--limit N] [--q X] [--type NAME]` (any master kind: `units`, `sale-types`, `account-groups`, …) · `op get <kind…> <name>` / `op get voucher <code>` · `op list series [--type T]` |
-| CLI (writes) | `op create\|update <account\|item> <name> --json '{..}'` · `op delete <account\|item> <name>` / `op delete voucher <code>` · `op post --json '{..}'` · `op batch --json '[..]'` (`--json-b64` for PowerShell) |
+| CLI (writes) | `op create\|update <kind> <name> --json '{..}'` · `op delete <kind> <name>` (probe-wired kinds) / `op delete voucher <code>` · `op post --json '{..}'` · `op batch --json '[..]'` (`--json-b64` for PowerShell) |
 | HTTP (reads) | `GET /op` (catalog) · `/op/<kind>s[?limit=&q=]` `/op/<kind>?name=` for **every** master kind (accounts, items, units, sale-types, …) · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` · `GET /op/series[?type=&limit=&q=]` · same paths under `/v1` (with `&cursor=`) + `GET /v1` resource index |
-| HTTP (writes) | `POST /op/account` · `PUT /op/account?name=` · `DELETE /op/account?name=` (item routes identical) · `POST /op/voucher` · `DELETE /op/voucher?code=` · `POST /op/batch` |
+| HTTP (writes) | `POST /op/account` · `PUT /op/account?name=` · `DELETE /op/account?name=` (every wired kind on `POST/PUT/DELETE /op/<kind>`, singular path) · `POST /op/voucher` · `DELETE /op/voucher?code=` · `POST /op/batch` |
 | Reports (CLI) | `op report account-balance --name X --from D --to D` · `op report group-balance --group X --from D --to D` · `op report trial-balance --from D --to D` · `op report stock-status --date D [--item X] [--q F] [--limit N]` |
 | Reports (HTTP) | `GET /op/report/{account-balance,group-balance,trial-balance,stock-status}` with the same names as query params |
 
