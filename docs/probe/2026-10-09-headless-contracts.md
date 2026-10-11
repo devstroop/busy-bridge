@@ -612,6 +612,75 @@ surfaces**; unmapped trial-balance stays the fail-closed 403 proof.
 App-report mapping status: ledger ✓ day-book ✓; trial-balance,
 stock-status, balances remain unmapped (admin-only) until granted +
 swept.
+## 20. Iteration 20 — P0 sweep: collection returns LIVE-PROVEN, UDT config writers callable, SaveVchFromJson head pinned (2026-10-12)
+
+Reconciles BUSY-002/003/004 against the landed state (both issues'
+checkbox lists were stale) and advances each. Runs:
+`tests/probe/results/20261012-013726/` (+ ad-hoc timed `call`s;
+`-SkipLockCheck` justified: the lock holder is the long-running Busy21
+COM server that every successful `--comp` child attaches through —
+~10 direct comp calls ran cleanly in the same window).
+
+- **BUSY-004 `_Collection` RETURN enumeration — done, now live-proven**
+  (the checkbox said "blocked on bridge support"; it shipped with
+  `feat/collection-read`): `call --enumerate-ret` /
+  `POST /call?enumerate_ret=1` walks VB6 Collections via Count/Item.
+  - `GetAllFinYearsOfSpecificCompCode("COMP0001")` (CFixedInterface1,
+    company open) → **`[2026]`** — scalar-item Collection, full walk.
+  - `GetCompList("C:\BusyWin\DATA\")` (CFixedInterface, no company)
+    → Count=2, but **items are nested dispatch objects** (`<dispatch>`
+    at the M1 boundary) — the company picker needs a one-level-deep
+    dispatch walk (propertygets on Item(i)) = next small bridge step.
+  - Manifest now carries `enumerateRet` probes (`comp-list-enumerated`,
+    `fin-years-enumerated`); harness gained `enumerateRet: true`.
+
+- **BUSY-002 rights schema — shape SOLVED, fixture remains.**
+  `GetMobileUserRightsJSONstr`'s param decodes as **`udtGeneral`**
+  (htype **50333065**, 332 B: generic D1–15 / L1–10 / I1–10 / S1–20 /
+  B1–10 / Date1–5 / Col1–3 slots — a carrier UDT, not a typed user
+  record). A `$record` with `{"S1":"user1"}` **executes**
+  (`ok:true, result:""`) — empty because COMP0001 has no mobile user.
+  The rights-JSON schema capture is blocked **only** on the GUI
+  fixture (mobile user + series grant). Repeatable probe:
+  `rights-udt-shape`.
+
+- **BUSY-003 series-gate writers — callable; content wall remains.**
+  - `InitUdtVSGrpConfig` / `SaveVchSeriesGrpConfig` live on
+    **`Busy2L21.COtherServices`** (not the `...1` variant). Their UDT
+    decoded: **`udtVchSeriesGrpConfig`** (htype **50333725**, 24 B) =
+    `VchSeriesCodeCol`/`VatAccCol`/`tmpVchSeriesNameCol`/
+    `tmpVatAccNameCol` (VT_DISPATCH collections) + `tmpVchSerGrpCode`
+    (I4) + `VchSerGrpName` (BSTR).
+  - `InitUdtVSGrpConfig` with a `$record` input (§19 byval shape)
+    → **ok:true** (the void initializer runs). `SaveVchSeriesGrpConfig`
+    with name+code (+ all four collection fields, empty) reaches the
+    callee but raises the **invisible validation** ("COM call failed,
+    no IErrorInfo") — `$collection`-inside-`$record` marshaling
+    passes the bridge (no BadArgs), so the remaining wall is
+    content/business (real series-code collection + group-code flow),
+    not wire shape.
+  - `ConfigMobileAppSeries` (CFixedInterface1, 1 param) still does not
+    decode its UDT via `surface --types` (deeper VT_PTR chain) —
+    tooling iteration (depth-3 ptr walk) is the next step there.
+
+- **`SaveVchFromJson` 9-param form — head pinned.** Prefix walk on
+  CFixedInterface1: k=0..2 → `0x8002000F` (prefix accepted), **k=3 →
+  callee runs** ⇒ first three params = **`[VT_I2 vchType, BSTR doc,
+  BSTR-byref errStr]`**; `{}` doc then raises the invisible
+  schema-validation (udtVchData keys, §14) — same content wall as
+  `SaveMastFromJson` pre-fixture.
+
+- **Cold-OpenDB timing re-measured** (BUSY-004 note §1.7): comp-gated
+  children now **4.1–7.7 s** (was ≈10 s at iteration 3; OS file-cache
+  warmth on this box), no-comp calls 0.3–0.4 s, warm serve <1 s. No
+  stale-lock signature; the cost is BUSY's own first-touch open.
+
+- **Write-safety**: the only write attempt (`SaveVchSeriesGrpConfig`
+  `ZZ Probe Grp`) failed validation → no residue.
+
+Capability record per operation (BUSY-003 acceptance, feeds the JSON
+write-path work): [`write-capability.md`](write-capability.md).
+
 ## 15. Iteration 15 — report-rights MIDDLEWARE shipped (BUSY-012, contract §5)
 
 Enforcement for the named-report surfaces, riding the existing
@@ -691,41 +760,41 @@ The login path now has all four legs verified:
 
 
 
-## 19. Iteration 19 � $record INPUT SOLVED: bare VT_RECORD is the canonical shape (2026-10-10)
-The �12 RECORD wall had one side left open: the VARIANT shape for
+## 19. Iteration 19 � $record INPUT SOLVED: bare VT_RECORD is the canonical shape (2026-10-10)
+The �12 RECORD wall had one side left open: the VARIANT shape for
 UDT *input* params ("all shapes 0x80020005"). Solved by re-running the
-matrix on a **trap-free discriminator** � `CopyVchData(udtVchData)`
+matrix on a **trap-free discriminator** � `CopyVchData(udtVchData)`
 (`CTranServices`, single UDT param, no other param traps to confound
-the result) and the void initializers � with a BUSY_REC_SHAPE sweep
+the result) and the void initializers � with a BUSY_REC_SHAPE sweep
 knob added to the boxing:
 
 | shape | CopyVchData | InitUDTAccMast | InitUdtVchData |
 |---|---|---|---|
-| `byrefvar` (pre-�19 default) VT_BYREF\|VT_VARIANT?inner VT_RECORD | 0x80020005 | 0x80020005 | 0x80020005 |
-| **`byval` bare VT_RECORD {pvRecord, pRecInfo}** | callee runs (business raise � needs full nested VT_PTR content) | **ok:true** | **ok:true** |
+| `byrefvar` (pre-�19 default) VT_BYREF\|VT_VARIANT?inner VT_RECORD | 0x80020005 | 0x80020005 | 0x80020005 |
+| **`byval` bare VT_RECORD {pvRecord, pRecInfo}** | callee runs (business raise � needs full nested VT_PTR content) | **ok:true** | **ok:true** |
 | `byrefrec` VT_BYREF\|VT_RECORD | callee runs | ok:true | ok:true |
 
-- **`byval` is now the shipped default** � the earlier �12 matrix's
+- **`byval` is now the shipped default** � the earlier �12 matrix's
   "byval ? 0x80020005" verdict was wrong (that attempt predates the
   real-runtime `pRecInfo` via `GetRecordInfoFromTypeInfo`; without it
   the callee's type check rejects everything). htypes used:
   udtAccMast **50332609**, udtVchData **50332129** (from `--types`
-  param TYPEDESC decode � note GetAccHSNOnSpecificDate's param is
+  param TYPEDESC decode � note GetAccHSNOnSpecificDate's param is
   *direct* VT_USERDEFINED, not VT_PTR).
 - `GetAccMastData`/`ByCode` returns decode to `null` via ret_udt
-  (empty/uninitialized record) � round-trip via JSON is therefore
+  (empty/uninitialized record) � round-trip via JSON is therefore
   not needed for content; the Init* family (`InitUDTAccMast`,
   `InitUdtVchData`, `InitUdtVSGrpConfig`, ~35 more on
   `COtherServices`/`COtherServices1`) are the clean per-UDT
   initializers.
 - **Leak fixed en route**: the byrefvar inner box VARIANT (16 B) was
-  never freed � `RecBox` now owns it (`box` field, freed in
+  never freed � `RecBox` now owns it (`box` field, freed in
   destroy); SafeAllocator flagged it on the error path.
 - Content-side walls that REMAIN (shape is no longer the blocker):
   `CopyVchData` business-raises on partially-filled records (needs
-  the nested `ItemEntries`/`AccEntries` VT_PTR arrays populated �
-  $collection-in-record is the next marshaling step); the �18
+  the nested `ItemEntries`/`AccEntries` VT_PTR arrays populated �
+  $collection-in-record is the next marshaling step); the �18
   series-gate writers (`SaveVchSeriesGrpConfig(udtVchSeriesGrpConfig)`,
-  `ConfigMobileAppSeries`) are now *callable* � populating
+  `ConfigMobileAppSeries`) are now *callable* � populating
   udtVchSeriesGrpConfig via `InitUdtVSGrpConfig` + field fill is the
   next JSON-save unblock attempt.

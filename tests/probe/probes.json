@@ -324,6 +324,17 @@
       "args": ["user1", 19, 0, 0, 0, "", {"$byref": "bstr"}], "useComp": true, "expect": "any", "notes": "Account Ledger for regular user" },
     { "id": "v7-rep-user1-201", "issue": "BUSY-012", "group": "rights",
       "method": "CheckUserRightsForReports", "progId": "Busy2L21.COtherServices1",
-      "args": ["user1", 201, 0, 0, 0, "", {"$byref": "bstr"}], "useComp": true, "expect": "any", "notes": "Bills Rec/Pay for regular user" }
+      "args": ["user1", 201, 0, 0, 0, "", {"$byref": "bstr"}], "useComp": true, "expect": "any", "notes": "Bills Rec/Pay for regular user" },
+    { "id": "comp-list-enumerated", "issue": "BUSY-004", "group": "session",
+      "method": "GetCompList", "args": ["C:\\BusyWin\\DATA\\"], "useComp": false, "enumerateRet": true, "expect": "OK",
+      "notes": "iter20: --enumerate-ret walks the returned Collection (Count=2); items are nested dispatch objects (M1 boundary, deep-walk = next bridge step)" },
+    { "id": "fin-years-enumerated", "issue": "BUSY-004", "group": "session",
+      "method": "GetAllFinYearsOfSpecificCompCode", "progId": "Busy2L21.CFixedInterface1",
+      "args": ["COMP0001"], "useComp": true, "enumerateRet": true, "expect": "OK",
+      "notes": "iter20: collection return enumerated -> [2026] (COMP0001 single FY); needs a company session" },
+    { "id": "rights-udt-shape", "issue": "BUSY-002", "group": "rights",
+      "method": "GetMobileUserRightsJSONstr", "progId": "Busy2L21.CMasterServices",
+      "args": [{"$record": {"htype": 50333065, "fields": {"S1": "user1"}}}], "useComp": true, "expect": "OK",
+      "notes": "iter20: udtGeneral carrier (htype 50333065, generic D/L/I/S/B/Date/Col slots); $record input executes - returns empty string until a mobile-user fixture exists in the company" }
   ]
 }
