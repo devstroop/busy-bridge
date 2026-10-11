@@ -38,6 +38,23 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    // Package surface for downstream Zig consumers (busy-server, and later
+    // busy-mcp/busy-cli): `bb_dep.module("busy_bridge")` resolves to
+    // src/lib.zig — the raw COM binding. The module carries the
+    // x86-windows target deliberately (BUSY's COM servers are 32-bit
+    // in-process DLLs); consumers link ole32/oleaut32/advapi32/bcrypt
+    // (+ws2_32 if they serve HTTP) at their final binary. The executable
+    // above is intentionally unchanged: bridge and server evolve
+    // separately from here on (split track, see CHANGELOG).
+    // NOTE: a source file belongs to exactly ONE module, so lib.zig
+    // cannot also sit in the executable's module graph — its smoke
+    // suites run in the named package test binary below.
+    const pkg = b.addModule("busy_bridge", .{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     const run_step = b.step("run", "Run busy-bridge");
@@ -62,6 +79,14 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    // Package-surface test binary: lib.zig belongs to exactly one module
+    // (the exposed `busy_bridge` package root), so its smoke suites cannot
+    // ride the executable's test root — they run in this named binary.
+    // check_tests.ps1 counts BOTH binaries (main 95 + package 3 = 98).
+    const pkg_tests = b.addTest(.{ .root_module = pkg, .name = "lib_surface_test" });
+    const run_pkg_tests = b.addRunArtifact(pkg_tests);
+    test_step.dependOn(&run_pkg_tests.step);
 
     // Replay suite (issue 009): host-native binary running only the
     // host-agnostic replay tests — the entry root never touches COM, so

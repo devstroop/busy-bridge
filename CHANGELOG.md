@@ -6,6 +6,27 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **Split track — bridge = raw COM binding** (bridge/server separation,
+  issue #42 track): `src/lib.zig` is the new **package root** for
+  downstream Zig consumers (busy-server now, busy-mcp/busy-cli later).
+  It re-exports exactly the raw binding surface — COM engine
+  (`core/com.zig` facade + session/surface/record/recordinfo/win32/
+  replay corpus), BUSY static knowledge (constants, registry, xmlmeta)
+  and util (json/xml/helpers/sqlguard) — and deliberately exposes **no
+  business semantics**: typed ops, rights policy and HTTP are the
+  server's job and stay out. `build.zig` exposes it as the
+  `busy_bridge` module (`dep.module("busy_bridge")`; consumers pick
+  target and link ole32/oleaut32/advapi32/bcrypt [+ws2_32]). Smoke
+  suites run in a dedicated named test binary (`lib_surface_test`; a
+  file belongs to exactly one module, so lib.zig cannot ride the
+  executable's test root). Test count 95 → 139 (check_tests counts both
+  binaries: main 95 + package 44); layers gate extended with the `lib` rule (imports core+util
+  only, never handlers/transport). The executable is unchanged. Next:
+  busy-server repo
+  consuming this package with handlers+transport moved over and the
+  HTTP live suites as the parity gate; `serve` leaves here only after
+  that parity is proven.
+
 - **Report-name map extended: `day-book` → repID 18** (GUI-grant assist
   executed): live `CheckUserRightsForReports` re-sweep of user1 (0–60 +
   195–205) shows the granted set **{18, 19, 201, 203}** vs §7's all-false
@@ -123,15 +144,15 @@ First tagged release. Windows x86 artifact (`busy-bridge-v0.1.0-windows-x86.zip`
 [Unreleased]: https://github.com/devstroop/busy-bridge/compare/v0.1.0...master
 [0.1.0]: https://github.com/devstroop/busy-bridge/releases/tag/v0.1.0
 
-- **`$record` INPUT SOLVED (probe �19)**: bare VT_RECORD
+- **`$record` INPUT SOLVED (probe �19)**: bare VT_RECORD
   (`{pvRecord, pRecInfo}` with the real runtime IRecordInfo) is the
-  canonical VB6 UDT-param shape � the pre-existing byrefvar default
+  canonical VB6 UDT-param shape � the pre-existing byrefvar default
   was the rejector. `byval` is now the shipped default (BUSY_REC_SHAPE
   sweeps byrefrec/byrefvar); live-proven on `InitUDTAccMast`
-  (udtAccMast htype 50332609) and `InitUdtVchData` (50332129) �
+  (udtAccMast htype 50332609) and `InitUdtVchData` (50332129) �
   `ok:true` both, vs 0x80020005 for the old shape. CopyVchData
   discriminates cleanly (callee runs; its business check needs nested
-  VT_PTR content � the next step). Leak fixed: the byrefvar inner box
+  VT_PTR content � the next step). Leak fixed: the byrefvar inner box
   VARIANT is now owned by RecBox (was 16 B/record on the error path).
   Tests 95/95 (+shapeFromName pure suite via the format.zig discovery
   block).

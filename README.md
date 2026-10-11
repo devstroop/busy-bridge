@@ -380,7 +380,37 @@ src/
 
 Dependency direction is **enforced**: `scripts/check_layers.ps1` resolves
 every `@import` against the layer rules (`util→util`, `core→+core`,
-`transport→+transport`, `main→transport`) and fails the build in CI.
+`transport→+transport`, `lib→+core/util`, `main→transport`) and fails
+the build in CI.
+
+### Consuming as a library (busy-server & friends)
+
+`src/lib.zig` is the package root — the **raw COM binding** only (no
+business semantics; those live in the consumers). From another Zig
+project (e.g. busy-server):
+
+```zig
+const bb = b.dependency("busy_bridge", .{ /* .repo, .revision, ... */ });
+mod.addImport("busy_bridge", bb.module("busy_bridge"));
+// final binary must be x86-windows (BUSY COM is 32-bit) and link:
+mod.linkSystemLibrary("ole32");
+mod.linkSystemLibrary("oleaut32");
+mod.linkSystemLibrary("advapi32"); // registry helpers
+mod.linkSystemLibrary("bcrypt");   // token generation
+mod.linkSystemLibrary("ws2_32");   // only if the consumer serves HTTP
+```
+
+```zig
+const bb = @import("busy_bridge");
+var sess = try bb.session.Session.init(alloc); // raw COM session (single serialized caller)
+defer sess.deinit();
+try sess.create("Busy2L21.CFixedInterface");   // any registered BUSY class (auto-discovery lives in core/registry)
+const res = try sess.invoke("SomeMethod", &.{}); // marker-driven args: $byref/$collection/$record/$enumerate
+const rows = try sess.queryToJson("SELECT 1");   // ADO rowset -> JSON (company must be open)
+```
+
+COM calls assume a single serialized caller (one apartment) — the
+consumer owns that discipline.
 
 ## Documentation & examples
 
@@ -402,7 +432,7 @@ zig fmt --check .    # formatting
 powershell scripts/check_layers.ps1   # layer boundaries
 powershell scripts/check_size.ps1     # structure gate: src ≤400, tests ≤200 lines
                                       #   (-ReportOnly to preview; enforcement default)
-powershell scripts/check_tests.ps1    # test-discovery gate: exact count (82)
+powershell scripts/check_tests.ps1    # test-discovery gate: exact count (139)
 powershell scripts/check_replay.ps1   # replay gate: exact count (29, Windows)
 ```
 
