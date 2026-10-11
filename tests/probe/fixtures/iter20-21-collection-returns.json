@@ -1,0 +1,29 @@
+{
+  "captured": "2026-10-12 (probe iterations 20-21, BUSY Rel 14, COMP0001 DEMO + DATA dir)",
+  "note": "Contract evidence for BUSY-004 collection returns + the decoded company picker (report sections 20-21). Raw harness runs stay gitignored (tests/probe/results/); this fixture is the distilled envelope set.",
+  "probes": {
+    "comp-list-enumerated": {
+      "method": "GetCompList",
+      "args": ["C:\\BusyWin\\DATA\\"],
+      "opts": "CFixedInterface, --enumerate-ret, no company open",
+      "result": [["DEMO", "COMP0001", "01/04/2026", 1, "", "", "80181626FFC04A2AAEE776D830240EC2", "", "", ""], ["DEMO", "COMP0002", "01/04/2026", 1, "", "", "80181626FFC04A2AAEE776D830240EC2", "", "", ""]],
+      "shape": "VB6 Collection of VB6 Collections; inner = 10-field row [compName, compCode, fyStart(DD/MM/YYYY), i2flag, '', '', companyGuid, '', '', '']",
+      "duration_ms": 574
+    },
+    "fin-years-enumerated": {
+      "method": "GetAllFinYearsOfSpecificCompCode",
+      "args": ["COMP0001"],
+      "opts": "CFixedInterface1, --enumerate-ret, company open",
+      "result": [2026],
+      "duration_ms": 8546
+    },
+    "rights-udt-shape": {
+      "method": "GetMobileUserRightsJSONstr",
+      "args": [{ "$record": { "htype": 50333065, "fields": { "S1": "user1" } } }],
+      "opts": "CMasterServices, company open",
+      "result": "",
+      "note": "udtGeneral carrier executes; empty until a mobile-user fixture exists",
+      "duration_ms": 7210
+    }
+  }
+}
