@@ -612,6 +612,52 @@ surfaces**; unmapped trial-balance stays the fail-closed 403 proof.
 App-report mapping status: ledger ✓ day-book ✓; trial-balance,
 stock-status, balances remain unmapped (admin-only) until granted +
 swept.
+## 22. Iteration 22 — `$collection`-inside-`$record` lands; series-grp writers accept full content but do not persist (2026-10-12)
+
+§19 named it the next marshaling step; §20 reached the callee but not
+with real content. Both halves now answered:
+
+- **Code** (`core/com/recordinfo.zig` + `marshal.zig`): VT_RECORD
+  fields with vt=26 (VT_DISPATCH) accept `{"$collection": [...]}` —
+  `inputCollection` builds the VB6 Collection, the ref transfers into
+  the record bytes, and the new `RecordInst.owned` list rides to the
+  `RecBox`, which releases embedded fields (BSTR + DISPATCH) before
+  freeing the buffer. Side effect: **in-record BSTR fields are no
+  longer process-lifetime** (they were — the RecBox previously just
+  freed the bytes). Pure test for the release walk's no-op paths;
+  tests 146 → 147.
+- **Live, positive**: `SaveVchSeriesGrpConfig` with FULL content
+  (`tmpVchSerGrpCode=9001`, name `ZZ Probe Grp`,
+  `VchSeriesCodeCol=[1290]`, `tmpVchSeriesNameCol=["ZigVch9"]`,
+  empty VAT collections) → **ok:true** — the partial-content invisible
+  raise of §20 is gone; `SaveVoucherSeriesGrp` (CFixedInterface1,
+  same record) also ok:true. The wire shape is no longer the blocker
+  anywhere in this family.
+- **Live, negative (persistence)**: nothing observable landed —
+  `TRAN10/TRAN11/TRAN12` (FY DB; all exist, all 0 rows; TRAN10's
+  columns pinned as `MASTERCODE1/MASTERCODE2/RECTYPE` via BUSY's own
+  `GetVoucherSeriesGrpQry(grp)` fragment
+  `… IN (SELECT MASTERCODE2 FROM TRAN10 WHERE MASTERCODE1 = <grp> AND
+  RECTYPE = 7)`) and `UserControl` (common DB — full column map now
+  captured: `Name, RecType, C1–C4, B1–B15, I1–I4, L1–L4, FinYrs`,
+  Admin/User1 × RecType{1,7} all defaults) are unchanged. Feature is
+  on (`DisableVchSeriesGrpOnReporting` → false).
+- **Live, negative (gate)**: the JSON-save gate is untouched —
+  `IfVchSeriesBelongs2RestrictedUser(1290)` still true,
+  `UserHasAccessToMobileApp("Admin")` still false, and
+  `SaveVchFromJsonForOldMobileApp` with a real doc (series
+  `ZigVch9`, party `Zig Test Party`) still returns
+  `result:false, outs:["Invalid voucher series."]` (§14 baseline).
+  The gate's config home is therefore NOT the series-grp tables we
+  can see — remaining headless lead is the `ConfigMobileAppSeries`
+  UDT (needs a depth-3 typelib walk); the reliable unblock stays the
+  §14 option (a) GUI fixture (mobile user + series grant).
+- No residue: both write attempts persisted nowhere observable.
+
+Repeatable probes added: `series-grp-write-full`,
+`series-restricted-check`. Fixture:
+`tests/probe/fixtures/iter22-series-grp-writers.json`.
+
 ## 21. Iteration 21 — the company picker DECODED: GetCompList items are nested Collections, recursed live (2026-10-12)
 
 Follows §20's finding (GetCompList items were `<dispatch>` at the M1

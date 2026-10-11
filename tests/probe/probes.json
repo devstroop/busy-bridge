@@ -335,6 +335,15 @@
     { "id": "rights-udt-shape", "issue": "BUSY-002", "group": "rights",
       "method": "GetMobileUserRightsJSONstr", "progId": "Busy2L21.CMasterServices",
       "args": [{"$record": {"htype": 50333065, "fields": {"S1": "user1"}}}], "useComp": true, "expect": "OK",
-      "notes": "iter20: udtGeneral carrier (htype 50333065, generic D/L/I/S/B/Date/Col slots); $record input executes - returns empty string until a mobile-user fixture exists in the company" }
+      "notes": "iter20: udtGeneral carrier (htype 50333065, generic D/L/I/S/B/Date/Col slots); $record input executes - returns empty string until a mobile-user fixture exists in the company" },
+    { "id": "series-grp-write-full", "issue": "BUSY-003", "group": "writes",
+      "method": "SaveVchSeriesGrpConfig", "progId": "Busy2L21.COtherServices",
+      "args": [{"$record": {"htype": 50333725, "fields": {"tmpVchSerGrpCode": 9001, "VchSerGrpName": "ZZ Probe Grp", "VchSeriesCodeCol": {"$collection": [1290]}, "tmpVchSeriesNameCol": {"$collection": ["ZigVch9"]}, "VatAccCol": {"$collection": []}, "tmpVatAccNameCol": {"$collection": []}}}}],
+      "useComp": true, "expect": "OK",
+      "notes": "iter22: full-content record incl $collection-inside-$record fields -> ok:true; persists nowhere observable (TRAN10/UserControl unchanged), gate untouched" },
+    { "id": "series-restricted-check", "issue": "BUSY-003", "group": "writes",
+      "method": "IfVchSeriesBelongs2RestrictedUser", "progId": "Busy2L21.CMasterServices",
+      "args": [1290], "useComp": true, "expect": "any",
+      "notes": "iter22: series-gate predicate baseline - true (every series restricted; unchanged after full series-grp writes)" }
   ]
 }
