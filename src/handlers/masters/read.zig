@@ -38,6 +38,15 @@ pub fn list(sess: *Session, alloc: Allocator, kind: Kind, opts: ListOpts) !json.
         keyset = ks;
         keyset_owned = ks;
     }
+    // SQL-side exact-prefix filter (series type partitions; F3): every
+    // fetched row matches, so client-side filtering can't hollow out a page.
+    var pf_clause: []const u8 = "";
+    var pf_owned: ?[]u8 = null;
+    defer if (pf_owned) |p| alloc.free(p);
+    if (opts.name_prefix) |pf| {
+        pf_owned = try prefixClause(alloc, pf);
+        pf_clause = pf_owned.?;
+    }
     // limit=0 = unlimited: no TOP clause at all
     var top_owned: ?[]u8 = null;
     defer if (top_owned) |t| alloc.free(t);
@@ -48,9 +57,9 @@ pub fn list(sess: *Session, alloc: Allocator, kind: Kind, opts: ListOpts) !json.
     }
     const sql = if (opts.q == null)
         // fetch limit+1 so "more rows exist" is detectable without a COUNT
-        try std.fmt.allocPrint(alloc, "SELECT {s}Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s} ORDER BY Name", .{ top, mt, keyset })
+        try std.fmt.allocPrint(alloc, "SELECT {s}Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s}{s} ORDER BY Name", .{ top, mt, keyset, pf_clause })
     else
-        try std.fmt.allocPrint(alloc, "SELECT Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s} ORDER BY Name", .{ mt, keyset });
+        try std.fmt.allocPrint(alloc, "SELECT Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s}{s} ORDER BY Name", .{ mt, keyset, pf_clause });
     defer alloc.free(sql);
 
     const rows = try sess.queryToJson(sql);
@@ -229,12 +238,32 @@ pub fn seriesOf(name: []const u8, prefix: []const u8) ?[]const u8 {
     return name[prefix.len..];
 }
 
+/// Zero-padded 2-digit type prefix for a voucher code: 9 → `"09"`,
+/// 10 → `"10"`, 32 → `"32"`. null = out of range (callers answer a
+/// precise BadArgs). Pure so the ≥10 code path is unit-testable (F5) —
+/// `std.fmt` width specs no longer zero-pad on Zig 0.17, hence digits.
+pub fn seriesPrefix(code: i64) ?[2]u8 {
+    if (code < 0 or code > 99) return null;
+    const tens: u8 = @intCast(@divTrunc(code, 10));
+    const ones: u8 = @intCast(@mod(code, 10));
+    return .{ '0' + tens, '0' + ones };
+}
+
+/// SQL fragment for an exact-prefix filter (owned; DAO wildcard `*` —
+/// `%` silently matches nothing, WP2 probe).
+fn prefixClause(alloc: Allocator, prefix: []const u8) ![]u8 {
+    const quoted = try helpers.sqlQuote(alloc, prefix);
+    defer alloc.free(quoted);
+    return std.fmt.allocPrint(alloc, " AND Name LIKE '{s}*'", .{quoted});
+}
+
 /// Voucher series (MasterType 21) as a picker list: the same envelope as
 /// `list` (`{kind:"series", count, truncated, items, page}`), optionally
-/// filtered to one voucher type with prefix-free names. Paging: the
-/// keyset cursor runs over the RAW stored names, so a page may show fewer
-/// matches than `limit` while `page.has_more` stays true — keep paging
-/// until `has_more` is false.
+/// filtered to one voucher type with prefix-free names. With `type_name`
+/// the partition is filtered SQL-side (`Name LIKE '09*'` — DAO's `*`
+/// wildcard), so the keyset cursor pages through matching rows only:
+/// every page is full and `page.has_more` is accurate (WP1 review F3;
+/// enabled by the WP2 probe that proved `*`, not `%`, is the wildcard).
 pub fn seriesList(sess: *Session, alloc: Allocator, opts: SeriesOpts) !json.Value {
     var prefix: ?[]u8 = null;
     defer if (prefix) |p| alloc.free(p);
@@ -243,18 +272,16 @@ pub fn seriesList(sess: *Session, alloc: Allocator, opts: SeriesOpts) !json.Valu
             sess.setErr("unknown voucher type '{s}' (canonical name, e.g. sale)", .{tn});
             return error.BadArgs;
         };
-        // BUSY stores a zero-padded 2-digit type prefix (SALE=9 -> "09").
-        // Manual digits keep the contract explicit (std.fmt width specs
-        // shifted in 0.17) and the code range is fixed by the table.
-        if (code < 0 or code > 99) {
+        // BUSY stores a zero-padded 2-digit type prefix (SALE=9 -> "09";
+        // codes >= 10 keep both digits) — digits come from the pure,
+        // unit-tested seriesPrefix (F5).
+        const pp = seriesPrefix(code) orelse {
             sess.setErr("voucher type '{s}' has an out-of-range code", .{tn});
             return error.BadArgs;
-        }
-        const tens: u8 = @intCast(@divTrunc(code, 10));
-        const ones: u8 = @intCast(@mod(code, 10));
-        prefix = try alloc.dupe(u8, &[_]u8{ '0' + tens, '0' + ones });
+        };
+        prefix = try alloc.dupe(u8, &pp);
     }
-    var v = try list(sess, alloc, .voucher_series, .{ .limit = opts.limit, .q = opts.q, .cursor = opts.cursor });
+    var v = try list(sess, alloc, .voucher_series, .{ .limit = opts.limit, .q = opts.q, .cursor = opts.cursor, .name_prefix = prefix });
     errdefer v.deinit(alloc);
     const p = prefix orelse return v;
     if (v != .obj) return error.UnexpectedRows;
@@ -312,4 +339,41 @@ test "seriesOf strips only a matching type prefix" {
     try testing.expect(seriesOf("Main", "09") == null);
     try testing.expect(seriesOf("09ZigVch9", "08") == null);
     try testing.expect(seriesOf("09ZigVch9", "") == null);
+    // two-digit prefixes (codes >= 10) — live rows: 10Main … 32Main
+    try testing.expectEqualStrings("Main", seriesOf("10Main", "10").?);
+    try testing.expectEqualStrings("ZigVch9", seriesOf("32ZigVch9", "32").?);
+    try testing.expect(seriesOf("19Main", "10") == null);
+    try testing.expect(seriesOf("09ZigVch9", "10") == null);
+}
+
+test "seriesPrefix builds zero-padded two-digit codes (F5)" {
+    const testing = std.testing;
+    const p9 = seriesPrefix(9).?;
+    const p5 = seriesPrefix(5).?;
+    const p0 = seriesPrefix(0).?;
+    try testing.expectEqualStrings("09", &p9);
+    try testing.expectEqualStrings("05", &p5);
+    try testing.expectEqualStrings("00", &p0);
+    // >= 10: both digits explicit (std.fmt width no longer zero-pads)
+    const p10 = seriesPrefix(10).?;
+    const p16 = seriesPrefix(16).?;
+    const p32 = seriesPrefix(32).?;
+    const p99 = seriesPrefix(99).?;
+    try testing.expectEqualStrings("10", &p10);
+    try testing.expectEqualStrings("16", &p16);
+    try testing.expectEqualStrings("32", &p32);
+    try testing.expectEqualStrings("99", &p99);
+    // out of range -> null (callers answer BadArgs)
+    try testing.expect(seriesPrefix(-1) == null);
+    try testing.expect(seriesPrefix(100) == null);
+    // round-trip through the stripper the picker uses
+    try testing.expectEqualStrings("Main", seriesOf("10Main", &p10).?);
+}
+
+test "prefixClause renders the DAO star wildcard" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    const c = try prefixClause(a, "09");
+    defer a.free(c);
+    try testing.expectEqualStrings(" AND Name LIKE '09*'", c);
 }
