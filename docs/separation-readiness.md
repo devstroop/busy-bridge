@@ -35,6 +35,12 @@ matches are doc-set *names* (provenance), not references.
 | **GitHub Actions CI on master** | ✅ `success` — was **red** until `faeb7ff` fixed a real bug the discovery fix had exposed (see §4) |
 | Live `run-all.ps1` (11 suites, serialized vs BUSY) | ✅ at last run (post-issue-011 merge) |
 
+*Refresh 2026-10-12 (docs regression): `check_layers.ps1` 352 imports /
+73 files; `check_tests.ps1` 146/146; `check_replay.ps1` 29/29;
+`check_links.py` 77 links / 0 broken; live `run-all.ps1` now 13 suites
+(01–13). `check_size.ps1` is red only on in-flight uncommitted work
+(`src/core/com/invoke.zig`; the committed version passes at 379 lines).*
+
 CI runs: fmt → layers → size → build → unit tests → **test-count gate** →
 smoke (version/classes). No step trusts another's silence: failures are
 loud by construction.
@@ -78,7 +84,8 @@ green CI run — the gates must run where the environment differs.**
 
 ## 5. Test distribution preview (for the future cut)
 
-82 discovered tests, by where they'd land under a lib/app split:
+82 discovered tests (snapshot 2026-10-09; the repo total is now 146 —
+`check_tests.ps1`), by where they'd land under a lib/app split:
 
 | Target | Tests | Contents |
 |---|---|---|
@@ -86,7 +93,8 @@ green CI run — the gates must run where the environment differs.**
 | application (HTTP edge) | 8 | `auth` (6), `sessions` (1), `v1` (1) |
 | CLI | 0 | (none today) |
 
-`check_tests.ps1` asserts 82 repo-wide today; after the cut it becomes
+`check_tests.ps1` asserts 146 repo-wide today (82 at the snapshot
+above); after the cut it becomes
 the per-package discovery gate (each package gets its own expected count
 — the lesson from `b7d51d0` applied mechanically).
 

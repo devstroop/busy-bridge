@@ -14,7 +14,8 @@ src/
 ├── handlers/             ERP facade - imports core + util, never transport
 │   ├── masters.zig   barrel (Kind, typeCode, ListOpts, requireStr)
 │   │   ├── read.zig      list, get — normalized reads, keyset paging
-│   │   └── write.zig     create, update, delete — SaveMasterFromXML
+│   │   ├── write.zig     create, update, delete — SaveMasterFromXML
+│   │   └── fields.zig    per-kind request key -> BUSY element map (WP2)
 │   ├── vouchers.zig  barrel (ListOpts)
 │   │   ├── read.zig      list, get — Tran1 + GetVchXML
 │   │   └── write.zig     buildSale/JournalDoc, post, delete
@@ -25,6 +26,7 @@ src/
 │   │   └── cursor.zig    opaque keyset paging cursors
 │   ├── reports.zig   named reports (by design: one probe-verified
 │   │                 call pattern each; see size-gate allowlist)
+│   ├── daybook.zig   day-book rows (Tran1 + Tran2, debit/credit totals)
 │   ├── exec.zig      write-op dispatcher (CLI + HTTP + batch share it)
 │   ├── batch.zig     BeginTran/CommitTran batch runner
 │   ├── catalog.zig   op catalog as data (by design: pure table)
@@ -93,7 +95,7 @@ A second binary, `zig build replay-test`, roots at `src/replay.zig` and
 runs only the host-agnostic suites (replay entry + replay + the pure
 json/xml suites it imports) — no COM module is ever analyzed there,
 because `callconv(.winapi)` externs do not compile on arm64 hosts. Counts:
-82 in the Windows binary (`scripts/check_tests.ps1`), 29 in the replay
+146 in the Windows binary (`scripts/check_tests.ps1`), 29 in the replay
 binary (`scripts/check_replay.ps1`); both assert EXACT numbers.
 
 **Any new file with tests must be referenced from one of these blocks**
@@ -113,7 +115,8 @@ $exe = Get-ChildItem .zig-cache -Recurse -Filter test.exe | Sort-Object LastWrit
 
 ```text
 company-ensure (?comp=/X-Company, issue #5)
-  → routes_meta  →  /v1  →  routes_ops  →  routes_raw  →  404
+  → session gate (--require-session; contract §5)
+  → /auth  →  routes_meta  →  /v1  →  routes_ops  →  routes_raw  →  404
 ```
 
 `serve()`/`handleConn`/auth gate live only in `http.zig`; route groups

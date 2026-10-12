@@ -96,7 +96,7 @@ off-loopback requires a token, see [Security](#security-token-auth--exposure-pol
 | Route | Request | Notes |
 |---|---|---|
 | `GET /health` | — | liveness |
-| `GET /info` | — | bridge version, resolved ProgID, open company, formats, routes |
+| `GET /info` | — | bridge version, resolved ProgID, open company, formats, routes, `auth_mode` (`off\|token\|session`) |
 | `GET /constants` | — | canonical master/voucher code tables as data |
 | `GET /classes` | — | registered `Busy*` ProgIDs |
 | `GET /surface[?member=M]` | — | IDispatch surface of the active `--prog-id` |
@@ -104,6 +104,17 @@ off-loopback requires a token, see [Security](#security-token-auth--exposure-pol
 | `POST /call` | `{"method":"M","args":[...]}` | any COM method |
 | `GET /call?method=M&args=...` | `args` = URL-encoded JSON array | read-style calls, e.g. `args=%5Bfalse%5D` |
 | `POST /call?method=M&type=N[&modify=true]` | **raw XML body** (`Content-Type: application/xml`) | document writes; `type` is the master/voucher type code at `args[0]` |
+| `POST /auth/login` | `{"username","password","comp","fy"}` | BUSY-validated user session (opaque token + rights) — [docs/auth-contract.md](docs/auth-contract.md) |
+| `GET /auth/me` | — | current session identity + normalized rights (session token) |
+| `POST /auth/logout` | — | revoke the session token (idempotent) |
+
+**User sessions** (BUSY-010/011): `/auth/*` is always mounted — login
+validates through BUSY itself (`ValidUserPassword`), never a bridge-side
+user store. The *gate* is opt-in: `serve --require-session` makes `/v1`
+and `/op` require a session token (401 `unauthorized`), raw
+`/call`/`/query` then need the `--allow-raw` operator flag or an admin
+session (BUSY-013), and `/info` reports `auth_mode` accordingly.
+Loopback runs without the flag keep the existing device tier untouched.
 
 **Multi-company** (issue #5): company-scoped routes (`/query`, `/call`,
 `/op*`, `/v1*`) accept `?comp=CODE` (query, wins) or `X-Company: CODE`
@@ -207,9 +218,15 @@ exposure policy is:
   read-only SQL unless writes are explicitly allowed. Run both - the token
   is authentication, the SQL guard is least privilege, and remote exposure
   stacks them (that is the intended posture).
-- **Out of scope here** (issue #4): per-user auth, RBAC, sessions - those
-  belong to the facade/company-rights layer - and encryption, which is a
-  proxy's job.
+- **Identity and rights are a second, opt-in tier** (BUSY-010 – 013,
+  [docs/auth-contract.md](docs/auth-contract.md)): `POST /auth/login`
+  validates credentials through BUSY itself and issues an opaque session
+  token; `serve --require-session` makes `/v1` + `/op` require one, with
+  rights deny-by-default (the super user gets full rights, everyone else
+  deny-all until per-user rights land), and raw `/call`/`/query` then
+  need `--allow-raw` or an admin session. Loopback runs without the flag
+  keep the device tier exactly as before (`auth_mode: "off"`).
+  **Encryption stays out of scope** — it is a proxy's job (below).
 
 ### TLS: terminate it in front, not in the bridge
 
@@ -298,8 +315,8 @@ business keys in, codes + names out, all COM/XML mechanics internal. Raw
 | CLI (writes) | `op create\|update <kind> <name> --json '{..}'` · `op delete <kind> <name>` (probe-wired kinds) / `op delete voucher <code>` · `op post --json '{..}'` · `op batch --json '[..]'` (`--json-b64` for PowerShell) |
 | HTTP (reads) | `GET /op` (catalog) · `/op/<kind>s[?limit=&q=]` `/op/<kind>?name=` for **every** master kind (accounts, items, units, sale-types, …) · `/op/vouchers[?type=&limit=]` `/op/voucher?code=` · `GET /op/series[?type=&limit=&q=]` · same paths under `/v1` (with `&cursor=`) + `GET /v1` resource index |
 | HTTP (writes) | `POST /op/account` · `PUT /op/account?name=` · `DELETE /op/account?name=` (every wired kind on `POST/PUT/DELETE /op/<kind>`, singular path) · `POST /op/voucher` · `DELETE /op/voucher?code=` · `POST /op/batch` |
-| Reports (CLI) | `op report account-balance --name X --from D --to D` · `op report group-balance --group X --from D --to D` · `op report trial-balance --from D --to D` · `op report stock-status --date D [--item X] [--q F] [--limit N]` |
-| Reports (HTTP) | `GET /op/report/{account-balance,group-balance,trial-balance,stock-status}` with the same names as query params |
+| Reports (CLI) | `op report account-balance --name X --from D --to D` · `op report group-balance --group X --from D --to D` · `op report trial-balance --from D --to D` · `op report stock-status --date D [--item X] [--q F] [--limit N]` · `op report day-book --from D --to D [--type T] [--party P] [--limit N]` · `op report ledger --name X --from D --to D [--limit N]` |
+| Reports (HTTP) | `GET /op/report/{account-balance,group-balance,trial-balance,stock-status,day-book,ledger}` with the same names as query params |
 
 - **Envelopes** (both formats, both transports): JSON
   `{"ok":true,"op":"list-accounts","result":{…}}` — same shape as
@@ -364,28 +381,47 @@ milestones are complete** (issue #7). See
 
 ```text
 src/
-├── main.zig            argv collection + dispatch (imports transport only)
-├── transport/          protocol concerns
-│   ├── commands.zig      CLI commands, --out threading
-│   ├── http.zig          server, negotiation, routing
-│   ├── format.zig        Format enum, Accept/Content-Type parsing, XML builders
-│   ├── envelope.zig      JSON envelope shaping
-│   └── cli.zig           usage, defaults, option -> OpenOpts
+├── main.zig            argv -> commands.run (imports transport only)
+├── lib.zig             package root: raw COM binding (no business semantics)
+├── handlers.zig        ERP facade barrel + handler test-aggregation block
+├── handlers/           ERP facade — imports core + util, never transport
+│   ├── masters/          read / write / fields (per-kind field map)
+│   ├── vouchers/         read / write (doc builders, post, delete)
+│   ├── common/           value, sql, dates, cursor (keyset paging)
+│   ├── reports.zig       named reports · daybook.zig the day-book rows
+│   ├── exec.zig          write-op dispatcher (CLI + HTTP + batch share it)
+│   ├── batch.zig         BeginTran/CommitTran/rollback runner
+│   ├── catalog.zig       op catalog as data (source of docs/operations.md)
+│   ├── auth.zig          login primitives · rights.zig per-user report rights
+│   └── golden.zig        golden-read flow for `busy-bridge record`
+├── transport/          protocol edge — may import handlers + core + util
+│   ├── commands.zig      CLI dispatcher; commands/{raw,ops}.zig the verbs
+│   ├── http.zig          serve, negotiation, session gate, route dispatch
+│   ├── http/             route groups: meta, auth, ops, raw (+ shared)
+│   ├── format.zig        barrel + test-aggregation root
+│   │   └── wire.zig / call.zig / xml_envelopes.zig
+│   ├── v1.zig            /v1 versioned facade + cursor paging
+│   ├── sessions.zig      multi-company Switcher · user_sessions.zig tokens
+│   ├── envelope.zig      JSON wire envelopes (ok/err/op/rows)
+│   ├── auth.zig          device token gate + safe-bind policy
+│   └── cli.zig           argv parsing, usage, option defaults
 ├── core/               BUSY domain (never imports transport)
-│   ├── com.zig + com/    raw IDispatch FFI, Session, surface/invoke/recordset
-│   ├── ops.zig           openSession, surfaceText, OpenOpts
-│   ├── xmlmeta.zig       which methods carry XML documents (Get=out, Save/Add/Modify=in@args[1])
-│   └── registry.zig      Win32 registry enumeration
+│   ├── com.zig + com/    raw IDispatch FFI: session, invoke, recordset, surface
+│   ├── constants.zig     master/voucher code tables
+│   ├── registry.zig      Win32 registry: newest Busy2L*.CFixedInterface
+│   └── xmlmeta.zig       which methods carry XML docs (Get=out, Save=in)
 └── util/               no BUSY knowledge, no transport knowledge
     ├── json.zig + json/  JSON value/writer/parser
     ├── xml.zig + xml/    XML parser/writer + mapping (fixtures-tested)
+    ├── sqlguard.zig      query-mode guard (issue #3)
     └── helpers.zig       strings, base64, urlDecode, stdout
 ```
 
 Dependency direction is **enforced**: `scripts/check_layers.ps1` resolves
 every `@import` against the layer rules (`util→util`, `core→+core`,
-`transport→+transport`, `lib→+core/util`, `main→transport`) and fails
-the build in CI.
+`handlers→+core+util`, `transport→+handlers+core+util`,
+`lib→+core+util`, `main→transport`) and fails the build in CI. Full
+layout + conventions: [docs/architecture.md](docs/architecture.md).
 
 ### Consuming as a library (busy-server & friends)
 
@@ -436,7 +472,7 @@ zig fmt --check .    # formatting
 powershell scripts/check_layers.ps1   # layer boundaries
 powershell scripts/check_size.ps1     # structure gate: src ≤400, tests ≤200 lines
                                       #   (-ReportOnly to preview; enforcement default)
-powershell scripts/check_tests.ps1    # test-discovery gate: exact count (139)
+powershell scripts/check_tests.ps1    # test-discovery gate: exact count (146)
 powershell scripts/check_replay.ps1   # replay gate: exact count (29, Windows)
 ```
 
@@ -455,7 +491,7 @@ tests (Windows runner; test binary is x86-windows) → replay tests
 Live-BUSY tests (require BUSY + a company; **not** runnable in CI):
 
 ```powershell
-powershell -File tests/live/run-all.ps1      # all 11 suites
+powershell -File tests/live/run-all.ps1      # all 13 suites
 powershell -File tests/live/01-roundtrip.ps1 # master create/read/delete (JSON)
 powershell -File tests/live/02-serve-defaults.ps1   # HTTP JSON defaults
 powershell -File tests/live/03-wire-modes.ps1       # both formats x both transports

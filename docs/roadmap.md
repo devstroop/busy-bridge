@@ -1,6 +1,6 @@
 # Roadmap & future direction
 
-> Status 2026-10-08, grounded in a live analysis of BUSY Rel 14's installed
+> Status 2026-10-12, grounded in a live analysis of BUSY Rel 14's installed
 > surface (925 classes / 4,496 core members) — not in the 2017 documents.
 > Concrete work items: [`issues/`](issues/).
 
@@ -12,19 +12,19 @@ docs (guides + full archive + generated reference) and live tests.
 
 **H0 is done** (2026-10-09): runtime ProgID discovery (001), contract
 hardening (002), guarded query (003), and voucher write validation (006)
-are all implemented and covered by the nine live suites in
+are all implemented and covered by the thirteen live suites in
 `tests/live/` (full `run-all.ps1` green against DEMO). Token auth +
 exposure policy (004) is also closed — non-loopback bind requires a token.
 
 **H1 is done** (2026-10-09): the ERP facade (007) ships as `handlers` (moved out of `core/` for the #12 package split)
 + CLI `op` + HTTP `/v1` with opaque keyset cursors; multi-company serve
-(005) is swap-based `?comp=`/`X-Company`. Eleven live suites green.
+(005) is swap-based `?comp=`/`X-Company`. Thirteen live suites green.
 
 **Source restructure (011) is done** (2026-10-09): every oversized module
 split into responsibility-named folders behind barrels (no file > 400
 lines; layout + conventions in [`architecture.md`](architecture.md)),
 the size gate is a CI step, and test discovery was fixed (26 tests had
-never run; 73/73 now). Repo-split precondition satisfied — triggers
+never run; 146/146 now). Repo-split precondition satisfied — triggers
 recorded in the decision records below.
 
 **What remains is consumers (H2)**: web/mobile apps against `/v1`, and

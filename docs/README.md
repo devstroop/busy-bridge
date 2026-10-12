@@ -38,8 +38,8 @@ released behavior; per-release notes live in
 
 - [Roadmap & future direction](roadmap.md) — horizons: contract hardening →
   ERP-centric facade → apps (web/mobile) → MCP/agent surface
-- [Open issues](issues/README.md) — paste-ready backlog **001–010** with labels,
-  effort, dependencies
+- [Open issues](issues/README.md) — backlog **001–012** (001–011 closed
+  history archive; active work is tracked on GitHub Issues)
 - [ERP operations layer (RFC)](erp-operations-layer.md) — the layer decision
   for the normalized surface (same repo, strict layer; raw tier stays)
 
