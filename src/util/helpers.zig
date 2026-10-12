@@ -27,7 +27,15 @@ pub fn b64Decode(alloc: Allocator, s: []const u8) ![]u8 {
 pub fn printOut(io: Io, alloc: Allocator, text: []const u8) !void {
     _ = alloc;
     var buf: [16384]u8 = undefined;
-    var w = Io.File.stdout().writer(io, &buf);
+    // writerStreaming, NOT writer: the default positional writer starts at
+    // pos=0, so every flush issues NtWriteFile with ByteOffset=0. When
+    // stdout is a FILE redirect each printOut call therefore overwrites
+    // from file offset 0 (multi-call outputs corrupt: the trailing "\n"
+    // eats "{", the last Usage write wins). Pipes and consoles ignore the
+    // explicit offset, which is why they were unaffected. Streaming mode
+    // passes ByteOffset=NULL and appends at the file object's current
+    // position; for pipes/consoles it is byte-identical to today.
+    var w = Io.File.stdout().writerStreaming(io, &buf);
     try w.interface.writeAll(text);
     try w.interface.flush();
 }
