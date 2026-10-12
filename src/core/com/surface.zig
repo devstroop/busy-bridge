@@ -161,7 +161,7 @@ pub fn dumpMemberTypes(self: *Session, alloc: Allocator, filter: []const u8) ![]
             // array; entry0's VT_PTR target is the pointed TYPEDESC.
             for (dump.ptrs[0..dump.nptrs]) |pt| {
                 if (pt.off != 52 or !pt.readable) continue;
-                const cand0 = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(desc) + 52)).*;
+                const cand0 = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(desc) + 8)).*;
                 if (cand0 > 0x10000) {
                     const tp: *const u8 = @ptrFromInt(cand0);
                     dump.udt = @import("recordinfo.zig").describeParamUdt(self, alloc, info, tp) catch null;
