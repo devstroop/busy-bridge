@@ -6,6 +6,17 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **Docs regression (2026-10-12)**: documentation re-verified against the
+  shipped surface — `scripts/docs/check_links.py` 77 local links / 0
+  broken; `docs/operations.md` and `docs/function-reference.md`
+  regenerate byte-identically (925 ProgIDs; 4,496 members / 16 core
+  classes). Drift fixed: README (current `handlers` architecture tree +
+  layer rules, `/auth` routes + opt-in session tier, day-book/ledger in
+  the report rows, test gate 146, 13 live suites), `architecture.md`
+  (dispatch order now session gate + `/auth`, 146 tests, `daybook.zig`
+  and `masters/fields.zig` in the folder map), `roadmap.md` (13 suites,
+  146/146), `docs/README.md` (backlog 001–012), `separation-readiness.md`
+  (gate snapshot refreshed).
 - **Collection read-back recurses nested Collections** (BUSY-004,
   report §21): `GetCompList`'s items are themselves VB6 Collections —
   `toJson` now walks VT_DISPATCH `Item()` results that satisfy the
