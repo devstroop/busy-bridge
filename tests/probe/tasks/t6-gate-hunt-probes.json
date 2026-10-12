@@ -1,0 +1,13 @@
+{
+  "meta": { "purpose": "T6 lane pins (bridge work-map): gate baselines + fixture-blocked markers", "busy": "Rel 14", "target": "COMP0001 DEMO (pre-fixture state)", "date": "2026-10-12" },
+  "probes": [
+    { "id": "t6-cur-user-grp", "issue": "BUSY-003", "group": "writes",
+      "method": "GetVchSeriesGrpCodeForCurUser", "progId": "Busy2L21.CMasterServices",
+      "args": [], "useComp": true, "expect": "OK",
+      "notes": "iter26: baseline datum - headless session user has no series group (result 0); flips after the GUI fixture" },
+    { "id": "t6-mobile-exists", "issue": "BUSY-002", "group": "rights",
+      "method": "MobileUserNameExists", "progId": "Busy2L21.CFixedInterface1",
+      "args": ["user1"], "useComp": false, "expect": "OK",
+      "notes": "iter26: fixture-blocked marker - false until the operator creates the GUI mobile user; the definitive wall (no COM creation method exists)" }
+  ]
+}

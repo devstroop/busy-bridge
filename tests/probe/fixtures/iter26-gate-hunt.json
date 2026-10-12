@@ -1,0 +1,19 @@
+{
+  "captured": "2026-10-12 (bridge-map lane T6, BUSY Rel 14, COMP0001 DEMO)",
+  "note": "Definitive negative: config home not in SQL among swept names; Mobile* census proves user creation is GUI-only - operator fixture is the unlock. Full writeup: docs/probe/fragments/t6-gate-hunt.md",
+  "sweeps": {
+    "table_existence": "40 candidates (TRAN13-16, MASTER22-30, Mobile*/UserControl2/etc) x (fy, common): zero hits",
+    "qry_leaks": {"MastCode2NameQry": "Help1", "GenMAI_BD_VOIQry": "VchOtherInfo, MasterAddressInfo, BillingDet", "GetVoucherSeriesGrpQry": "TRAN10 (MASTERCODE1/2, RECTYPE=7) - only series-grp SQL"}
+  },
+  "baselines_after_batteries": {
+    "IfVchSeriesBelongs2RestrictedUser_1290": true,
+    "UserHasAccessToMobileApp_Admin": false,
+    "TRAN10_count": 0,
+    "GetVchSeriesGrpCodeForCurUser": 0
+  },
+  "writer_results": {
+    "ConfigMobileAppSeries": "invisible validation on every payload (full record/scalars/strings); keyed pairs -> unsupported_arg_type",
+    "SaveVoucherSeriesGrp": "ok:true result:null; no persistence"
+  },
+  "definitive_wall": "NO mobile-user creation method exists on any COM class (census in fragment) - GUI fixture (mobile user + series grant) is the only unlock for BUSY-002 schema + the JSON-save gate"
+}
