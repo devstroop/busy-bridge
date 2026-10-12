@@ -10,12 +10,12 @@ Legend: **XML** = `SaveMasterFromXML`/`SaveVchXML` family ·
 
 | Operation | XML | JSON | Evidence |
 |---|---|---|---|
-| Master create (unit, account-group, item-group, store, tax-category; sale/purchase-type + bill-sundry with extra fields) | **verified** | shape solved, content wall | XML: WP2 ladders (live creates + reads); JSON: §14 (callee runs; `{}` doc → invisible validation raise) |
+| Master create (unit, account-group, item-group, store, tax-category; sale/purchase-type + bill-sundry with extra fields) | **verified** | shape accepted, **content keys unresolved** | XML: WP2 ladders (live creates + reads); JSON: §14 (callee runs; `{}` doc → invisible validation raise) + §23 (udtAccMast-keyed docs for account-group/tax-category reach the callee; minimal Name/PrintName/ParentGrpName insufficient) |
 | Master update (full-tree fetch-merge-resave) | **verified** | pending | WP2 (all 10 writable kinds) |
 | Master delete (account, item, account-group, item-group, tax-category only) | **verified** | pending | WP2 COM-delete crash matrix (unit/store/type/sundry deletes crash BUSY — doc-gated) |
 | Unit-conversion write | doc-gated | doc-gated | SaveMasterFromXML crashes on MasterType 16 in all arg forms (WP2) |
 | BOM write | n/a on Rel 14 | n/a | `GetBOMMastData` absent (WP2) |
-| Voucher save (standard) | verified | **shape pinned, content wall** | JSON: §20 walk — `[I2 vchType, BSTR doc, BSTR-byref err]` head accepted, doc validation raises; full 9-param tail + udtVchData keys pending |
+| Voucher save (standard) | verified | **series-gate blocked (fixture)** | JSON: §20 head pin + §23 tail3 numeric family — schema-correct minimal docs return `Invalid voucher series.` on both Main and ZigVch9 (same wall as old-mobile form) |
 | Voucher save (old-mobile form) | verified | runs, **series-gate blocked** | §14: end-to-end invoke; `Invalid voucher series.` = per-user mobile-series config missing headless; §18 gate predicates; §20 writers callable (content wall) |
 | Series-group config write (`SaveVchSeriesGrpConfig`) | n/a | **callable, content wall** | §20: `udtVchSeriesGrpConfig` (htype 50333725) `$record` accepted; validation raise needs real series-code collection |
 | Mobile-app series config (`ConfigMobileAppSeries`) | n/a | UDT not decoded | §18/§20: VT_PTR chain deeper than `surface --types` walks |

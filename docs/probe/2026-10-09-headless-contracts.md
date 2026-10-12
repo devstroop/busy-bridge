@@ -877,3 +877,44 @@ knob added to the boxing:
   `ConfigMobileAppSeries`) are now *callable* � populating
   udtVchSeriesGrpConfig via `InitUdtVSGrpConfig` + field fill is the
   next JSON-save unblock attempt.
+
+## 23. Iteration 23 — BUSY-003: tail matrix pinned, schemas captured, standard form CONFIRMED series-gated (2026-10-13)
+
+One-param-at-a-time walk (the §14 oracle) on the 9-param
+`SaveVchFromJson` form (CFixedInterface1, COMP0001; head pinned at §20
+= `[I2 vchType, BSTR doc, BSTR-byref errStr]`). Raw run:
+`tests/probe/results/20261013-035534` (12 probes, manifest
+`probes-busy003-matrix.json`).
+
+- **slot3 type family pinned — it is numeric.** VT_I2, VT_I4, VT_BOOL
+  and VT_BYREF|VT_I4 all reach the callee (invisible-validation raise
+  on a `{}` doc); plain VT_BSTR (series-name guesses "Main"/"ZigVch9"),
+  VT_BYREF|VT_BSTR and the `$collection` marker all fail
+  `DISP_E_TYPEMISMATCH`. Candidate identities (p_VchNo / auto-number
+  flag / user-code int) resolve only after a fixture-backed run gets
+  past the series gate.
+- **The STANDARD 9-param save is series-gated too — the §14 wall is
+  NOT old-mobile-specific.** Schema-correct minimal docs (keys taken
+  from the live udtVchData decode: `VchType`, `VchSeriesName`, `Date`
+  in BUSY `dd/MM/yyyy`, `MasterName1`, `ShortNar`) return
+  `ok:true, result:false, outs:["Invalid voucher series."]` on both
+  `Main` and `ZigVch9`. JSON voucher persistence is therefore
+  **fixture-blocked** (GUI mobile user + series grant — §14 option
+  (a)) on *both* save paths.
+- **Master JSON creates: wire shape accepted, content wall confirmed
+  key-level.** `SaveMastFromJson` with udtAccMast-keyed docs (account
+  group #1, tax category #25; args per the §14 pinned shape) reaches
+  the callee — invisible validation raise, no residue. Minimal
+  `Name`/`PrintName`/`ParentGrpName` is insufficient; the exact
+  per-kind create key set remains the wall (not marshaling).
+- **Schemas captured live** (`surface --types` return-UDT decode) and
+  committed under `docs/probe/schemas/`:
+  - `GetJSON2VchData.udt.json` — **udtVchData**, 4720 B, **181
+    fields** (VchType I2, VchSeriesName/STPTName/SalePurcAccName/
+    MasterName1/2 BSTR, Date/StockUpdationDate VT_DATE, AccEntries/
+    ItemEntries VT_PTR arrays, tmp* internals …) — field names ARE the
+    voucher JSON keys.
+  - `GetJSON2AccMast.udt.json` — **udtAccMast**, 1448 B, **134
+    fields** (Name/Alias/PrintName/ParentGrpName, OpBal/PYBal,
+    GSTType/RegDealer, udtAddressInfo/Budgets/TaxType …) — the master
+    JSON key table.
