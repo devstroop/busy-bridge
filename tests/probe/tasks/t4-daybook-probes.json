@@ -1,0 +1,15 @@
+{
+  "meta": { "purpose": "T4 lane pins (bridge work-map): ledger tail + day-book Date-param + identity position", "busy": "Rel 14", "target": "COMP0001 DEMO (vouchers seeded by the t4-daybook-layout.ps1 script)", "date": "2026-10-12" },
+  "probes": [
+    { "id": "t4-ledger-tail-pinned", "issue": "BUSY-004", "group": "reads",
+      "method": "GetAccLedgerJSON", "progId": "Busy2L21.COtherServices1",
+      "args": [{"$collection": ["x", "x", "Admin", "y"]}, {"$byref": "bstr"}, 0.0, false, {"$date": "2026-04-30"}, false, false],
+      "useComp": true, "expect": "OK",
+      "notes": "iter24: full 7-param tail accepted with plain scalars ({} = empty company; seed vouchers first for rows)" },
+    { "id": "t4-daybook-identity-pos1-refused", "issue": "BUSY-004", "group": "reads",
+      "method": "GetAccDayBookJSON", "progId": "Busy2L21.COtherServices1",
+      "args": [{"$collection": ["Admin", {"$date": "2026-04-01"}, {"$date": "2026-04-30"}, "Zig Test Party", "Sale"]}, {"$byref": "bstr"}, false, {"$date": "2026-04-30"}],
+      "useComp": true, "expect": "OK",
+      "notes": "iter24: identity NOT at position 3 -> ok:true + outs:['User don't have rights to view this report.'] (position-3 proof)" }
+  ]
+}

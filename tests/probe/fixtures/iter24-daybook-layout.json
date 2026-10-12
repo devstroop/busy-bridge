@@ -1,0 +1,22 @@
+{
+  "captured": "2026-10-12 (bridge-map lane T4, BUSY Rel 14, COMP0001 DEMO)",
+  "note": "Distilled pins from the day-book/ledger COM-getter sweep; full matrix in docs/probe/fragments/t4-daybook-layout.md. COMP0001 has ZERO vouchers — {} is correct for an empty company; layout discrimination used a seed->sweep->cleanup round-trip (op post-voucher / op delete-voucher, Tran1 count back to 0).",
+  "pins": {
+    "GetAccLedgerJSON": {
+      "signature": "_Collection, string, double, bool, Date, bool, bool (7 params, COtherServices1)",
+      "accepted_tail": "[coll(4+ items), {\"$byref\":\"bstr\"}, 0.0, false, {\"$date\":\"2026-04-30\"}, false, false]",
+      "outcome": "ok:true result {} (empty company); plain scalars fine — §8 tail mismatches were positional guessing"
+    },
+    "GetAccDayBookJSON": {
+      "signature": "_Collection, string, bool, Date (4 params, COtherServices1)",
+      "param4_required": "3-arg calls -> 0x8002000F for every collection shape",
+      "identity_position": "collection item 3 = rights identity; Admin at pos1 -> outs:[\"User don't have rights to view this report.\"]"
+    },
+    "seeding": {
+      "post": "op post-voucher journal (series Main, Cash/Sales, 15) -> codes 1,2 in Tran1 (2026-04-05, 2026-04-10)",
+      "cleanup": "op delete-voucher 1,2 -> Tran1 COUNT(*)=0"
+    }
+  },
+  "negatives_with_data": "party/type/int-type/date-first/str-date/partial/junk layouts all returned {} with 2 journals in window — identity@3 necessary but not sufficient; remaining hypotheses: session/mobile gating (§18 family), UDT items (T3), GUI-only construction",
+  "corrected_fact": "COMP0001 Tran1 is EMPTY on this box (work-map claim of 3 vouchers was wrong — those lived in a separate data-bearing company per §8)"
+}
