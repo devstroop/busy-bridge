@@ -1,0 +1,13 @@
+{
+  "captured": "2026-10-12 (bridge-map lane T7, BUSY Rel 14; bridge serve 0.1.0-86-g105e0f4, port 9830)",
+  "note": "Company-switch + STA experiment; replayable tests/probe/tasks/t7-fy-switch.ps1. Full writeup: docs/probe/fragments/t7-fy-switch.md",
+  "results": {
+    "switch_to_other": "6.6s (CloseDB+OpenDB); GetCurrentUserName flips Admin->Busy (per-company state)",
+    "master1_counts": {"COMP0001": 428, "COMP0002": 405},
+    "switch_back": "5.4s -> 428 again; same-company repeat 0.0s",
+    "cross_talk": "none - default requests after roundtrip still Admin/428",
+    "parallel_same_company": "both succeed (sequential accept loop serializes)",
+    "fy_param": "?fy=2025 accepted-ignored (no FY dimension on bridge serve; server spec S6 scope)"
+  },
+  "sta_verdict": "sessions.zig single-occupant Switcher + http.zig sequential accept loop => STA constraint structurally enforced; /info exposes switches counter"
+}
