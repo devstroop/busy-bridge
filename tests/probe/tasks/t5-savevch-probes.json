@@ -1,0 +1,20 @@
+{
+  "meta": { "purpose": "T5 lane pins (bridge work-map): SaveVchFromJson full 9-param shape on both hosts", "busy": "Rel 14", "target": "COMP0001 DEMO (vouchers seeded by t5-savevch-walk.ps1)", "date": "2026-10-12" },
+  "probes": [
+    { "id": "t5-shape-fixed-interface1", "issue": "BUSY-003", "group": "writes",
+      "method": "SaveVchFromJson", "progId": "Busy2L21.CFixedInterface1",
+      "args": [{"$i2": 9}, "{\"VchType\":9,\"VchSeriesName\":\"Main\",\"Date\":\"10/04/2026\"}", {"$byref": "bstr"}, 0, false, "Admin", {"$collection": []}, false, ""],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "iter25: full 9-param shape accepted (callee runs; invisible validation on doc content = the session/config wall, not shape)" },
+    { "id": "t5-shape-other-services1", "issue": "BUSY-003", "group": "writes",
+      "method": "SaveVchFromJson", "progId": "Busy2L21.COtherServices1",
+      "args": [{"$i2": 9}, "{\"VchType\":9,\"VchSeriesName\":\"Main\",\"Date\":\"10/04/2026\"}", {"$byref": "bstr"}, 0, false, "Admin", {"$collection": []}, false, ""],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "iter25: dual-host proof (identical envelope on COtherServices1)" },
+    { "id": "t5-vup-baseline", "issue": "BUSY-003", "group": "writes",
+      "method": "SaveVchFromJsonForOldMobileApp", "progId": "Busy2L21.COtherServices1",
+      "args": [{"$i2": 9}, "{\"VchSeriesName\":\"ZigVch9\"}", {"$byref": "bstr"}, 0, false, "Admin", {"$collection": []}, false],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "iter25: S14 gate baseline unchanged - result:false outs:[\"Invalid voucher series.\"]" }
+  ]
+}

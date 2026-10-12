@@ -1,0 +1,12 @@
+{
+  "captured": "2026-10-12 (bridge-map lane T5, BUSY Rel 14, COMP0001 DEMO)",
+  "note": "SaveVchFromJson shape fully pinned on both hosts; invisible-validation wall is session/config-bound (native BUSY row verbatim still raises). Full matrix: docs/probe/fragments/t5-savevch-walk.md",
+  "shape": {
+    "hosts": ["Busy2L21.CFixedInterface1", "Busy2L21.COtherServices1"],
+    "params": "p_VchType($i2), p_JSONStr(BSTR doc), p_ErrStr(byref bstr), p_Vchcode(I4), p_ChkIfMobileUser(bool), p_UserName(BSTR), p_CSUserCol($collection), p_SavedAsCancelled(bool), p_ErrCode(plain BSTR byval)",
+    "accepted_full_call": "[{\"$i2\":9},\"<doc>\",{\"$byref\":\"bstr\"},0,false,\"Admin\",{\"$collection\":[]},false,\"\"] -> callee runs on both hosts"
+  },
+  "content_matrix": "empty doc / series Main+ZigVch9 / DD-MM dates / JSON-wrapper / fuller keys / tmpVchSeriesCode / native GetJSONFromRecordset row (verbatim+unwrapped, chkMobile both) -> ALL invisible validation; Tran1 count 0 after every attempt",
+  "native_row_shape": "{\"JSON\":[{VchCode,VchType,Date(\"DD-MM-YYYY\"),StockUpdationDate,VchNo,VchSeriesCode(code not name),MasterCode1/2,Stamp,...}]} (1985 bytes for the seeded journal)",
+  "verdict": "content wall = per-user mobile/CS-series config gate (S18 family; T6 territory); XML remains the production write path"
+}
