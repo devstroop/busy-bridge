@@ -44,16 +44,29 @@ pub fn describeParamUdt(
     ti_method: *ITypeInfo,
     param_tdesc: *const u8,
 ) !?UdtDesc {
-    const vt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(param_tdesc) + 4)).*;
+    // Bounded indirection walk (T1): a param TYPEDESC chains zero or
+    // more VT_PTR (26) levels before the VT_USERDEFINED (29) leaf —
+    // ConfigMobileAppSeries (CFixedInterface1) is deeper than the
+    // single-level 26->29 resolve below used to handle. Depth-guard +
+    // same-pointer guard keep the walk cycle-safe; any other vt ends it
+    // (null = not a UDT param, unchanged contract).
+    var td: *const u8 = param_tdesc;
     var hreftype: u32 = 0;
-    if (vt == 29) {
-        hreftype = @as(*align(1) const u32, @ptrCast(param_tdesc)).*;
-    } else if (vt == 26) {
-        const pointed: *const u8 = @ptrFromInt(@as(usize, @intCast(@as(*align(1) const u32, @ptrCast(param_tdesc)).*)));
-        const pvt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(pointed) + 4)).*;
-        if (pvt != 29) return null;
-        hreftype = @as(*align(1) const u32, @ptrFromInt(@intFromPtr(pointed))).*;
-    } else return null;
+    var found = false;
+    var depth: usize = 0;
+    while (depth < 4) : (depth += 1) {
+        const vt = @as(*align(1) const u16, @ptrFromInt(@intFromPtr(td) + 4)).*;
+        if (vt == 29) {
+            hreftype = @as(*align(1) const u32, @ptrCast(td)).*;
+            found = true;
+            break;
+        } else if (vt == 26) {
+            const next: *const u8 = @ptrFromInt(@as(usize, @intCast(@as(*align(1) const u32, @ptrCast(td)).*)));
+            if (next == td) break; // self-pointer cycle
+            td = next;
+        } else break;
+    }
+    if (!found) return null;
     return describeHreftype(sess, alloc, ti_method, hreftype);
 }
 

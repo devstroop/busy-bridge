@@ -1,0 +1,20 @@
+{
+  "captured": "2026-10-12 (bridge-map lane T1, BUSY Rel 14, COMP0001 DEMO)",
+  "note": "ConfigMobileAppSeries param is ByRef-VARIANT - no static UDT exists; the missing udt block in surface --types is provably correct. Full writeup: docs/probe/fragments/t1-udtdesc-depth3.md",
+  "decode": {
+    "method": "FUNCDESC+8 ELEMDESC pointer + bounded VT_PTR walk (BUSY_UDT_DEBUG)",
+    "chain": "hop0 vt=26 (VT_PTR) -> hop1 vt=12 (VT_VARIANT)",
+    "conclusion": "param = ByRef Variant; runtime record/collection inside; typelib cannot describe it"
+  },
+  "runtime_matrix": {
+    "coll_scalars_[1290]": "callee runs (invisible validation)",
+    "coll_str_ZigVch9": "callee runs",
+    "record_udtVchSeriesGrpConfig_direct": "callee runs",
+    "coll_of_records": "unsupported_arg_type on pre-T3 master; retest after PR #56"
+  },
+  "regressions": {
+    "InitUdtVSGrpConfig": "udtVchSeriesGrpConfig htype=50333725 (identical)",
+    "GetMobileUserRightsJSONstr": "udtGeneral htype=50333065 (identical)",
+    "CopyVchData": "udtVchData htype=50332129 (identical)"
+  }
+}
