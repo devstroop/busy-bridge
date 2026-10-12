@@ -1,0 +1,54 @@
+{
+  "task": "T3 - $collection items marshal {\"$record\":{htype,fields}} UDT rows",
+  "branch": "feat/t3-collection-records",
+  "date": "2026-10-12",
+  "live_result": "pending-operator-run",
+  "probe_manifest": "tests/probe/tasks/t3-collection-records-probes.json",
+  "verify_command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\probe\\invoke-probes.ps1 -Manifest tests\\probe\\tasks\\t3-collection-records-probes.json -SkipLockCheck",
+  "probe_envelope": {
+    "method": "SaveVchSeriesGrpConfigForMultipleSeriesCreation",
+    "progId": "Busy2L21.CFixedInterface1",
+    "class_note": "Variant SaveVchSeriesGrpConfigForMultipleSeriesCreation(Variant, Variant); p_CodeCol, p_SeriesName (docs/function-reference.md; BUSY Research/surface/Busy2L21_CFixedInterface1.txt:470)",
+    "useComp": true,
+    "arg0": {
+      "$collection": [
+        { "$record": { "htype": 50333725, "fields": {
+          "tmpVchSerGrpCode": 9001,
+          "VchSerGrpName": "ZZ T3 Grp A",
+          "VchSeriesCodeCol": { "$collection": [1290] },
+          "tmpVchSeriesNameCol": { "$collection": ["ZigVch9"] },
+          "VatAccCol": { "$collection": [] },
+          "tmpVatAccNameCol": { "$collection": [] }
+        } } },
+        { "$record": { "htype": 50333725, "fields": {
+          "tmpVchSerGrpCode": 9002,
+          "VchSerGrpName": "ZZ T3 Grp B",
+          "VchSeriesCodeCol": { "$collection": [251, 252] },
+          "tmpVchSeriesNameCol": { "$collection": ["02Main", "03Main"] },
+          "VatAccCol": { "$collection": [] },
+          "tmpVatAccNameCol": { "$collection": [] }
+        } } }
+      ]
+    },
+    "arg1_guesses": [
+      { "$collection": ["ZZ T3 Multi Series"] },
+      "ZZ T3 Multi Series"
+    ]
+  },
+  "acceptance": {
+    "ok": "envelope ok:true - callee executed; any business result (incl. BUSY invisible-validation raise) is acceptable",
+    "not_ok": "unsupported_arg_type or BadArgs from the bridge (item marshaling regression)",
+    "expected_bridge_error_before_T3": "unsupported_arg_type (variantFromValue .obj arm)"
+  },
+  "udt": {
+    "name": "udtVchSeriesGrpConfig",
+    "htype": 50333725,
+    "size": 24,
+    "fields": "VchSeriesCodeCol/VatAccCol/tmpVchSeriesNameCol/tmpVatAccNameCol (VT_DISPATCH collections) + tmpVchSerGrpCode (I4) + VchSerGrpName (BSTR)"
+  },
+  "safety": {
+    "skip_lock_check": "a long-running Busy21 COM server holds COMP0001 locks; direct comp calls attach fine (iter20 precedent)",
+    "write_safety": "iter22 showed full-content series-grp writes persist nowhere observable on this fixture; probes reuse codes/names already present or inert (9001/9002 groups)",
+    "shared_fixtures_untouched": "comp-list-enumerated / fin-years-enumerated (tests/probe/probes.json) unchanged by the T3 diff"
+  }
+}

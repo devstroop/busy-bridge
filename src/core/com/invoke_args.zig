@@ -119,11 +119,10 @@ pub const Slots = struct {
         }
     }
 
-    /// Release + free a $record input box (VT_RECORD payload).
+    /// Release + free a $record input box chain (T3 — freed exactly once).
     fn freeRecBox(sess: *Session, slot: *?*marshal.RecBox) void {
         if (slot.*) |rb| {
-            rb.destroy(sess.alloc);
-            sess.alloc.destroy(rb);
+            marshal.freeRecChain(sess.alloc, rb);
             slot.* = null;
         }
     }
