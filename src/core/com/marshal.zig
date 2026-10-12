@@ -38,6 +38,7 @@ const CoCreateInstance = win32.CoCreateInstance;
 const CLSIDFromProgID = win32.CLSIDFromProgID;
 const CLSCTX_INPROC_SERVER = win32.CLSCTX_INPROC_SERVER;
 const collection_mod = @import("collection.zig");
+const collitem = @import("collitem.zig");
 const registry = @import("../registry.zig");
 
 const DISPATCH_METHOD: u32 = 0x1;
@@ -46,12 +47,16 @@ const DISPATCH_METHOD: u32 = 0x1;
 /// after the invoke — BSTR fields inside are released post-invoke via `owned` (§22).
 /// `box` is the byrefvar-shape inner VARIANT (owned; freed too — it
 /// leaked 16 B/record on the error path until iteration 19).
+/// `next` chains further record boxes (T3: `$collection` items that
+/// are `"$record"` UDT rows) — every box in the run frees exactly
+/// once via [freeRecChain].
 pub const RecBox = struct {
     buf: [*]u8,
     size: u32,
     box: ?*win32.VARIANT = null,
     /// COM-embedded fields (BSTR / Collection) released before buf.
     owned: []const @import("recordinfo.zig").OwnedField = &.{},
+    next: ?*RecBox = null,
     pub fn destroy(self: *RecBox, alloc: Allocator) void {
         @import("recordinfo.zig").releaseOwned(self.buf, self.owned);
         if (self.owned.len > 0) alloc.free(self.owned);
@@ -59,6 +64,32 @@ pub const RecBox = struct {
         alloc.free(self.buf[0..self.size]);
     }
 };
+
+/// Free a chain of RecBoxes (T3: `$collection` record items), head
+/// included — each payload released exactly once, then the node.
+pub fn freeRecChain(alloc: Allocator, head: ?*RecBox) void {
+    var cur = head;
+    while (cur) |rb| {
+        const nx = rb.next;
+        rb.destroy(alloc);
+        alloc.destroy(rb);
+        cur = nx;
+    }
+}
+
+/// Splice the `more` chain (possibly null) onto the END of `head`
+/// (T3: merging per-field record-item chains into RecordInst.coll_recs;
+/// head stays stable, empty head absorbs `more`).
+pub fn chainAppend(head: *?*RecBox, more: ?*RecBox) void {
+    const extra = more orelse return;
+    const cur = head.* orelse {
+        head.* = extra;
+        return;
+    };
+    var tail = cur;
+    while (tail.next) |n| tail = n;
+    tail.next = extra;
+}
 
 /// Input-arg markers handled in the invoke loop (split for the size
 /// gate): `{"$i2": n}` (VB6 Short), `{"$collection": [...]}` (typed
@@ -108,9 +139,11 @@ pub fn fillInputMarker(
         const rbsize: u32 = rec.r2;
         const rb = sess.alloc.create(RecBox) catch |e| {
             @import("recordinfo.zig").releaseOwned(buf, inst.owned);
+            if (inst.owned.len > 0) sess.alloc.free(inst.owned);
+            freeRecChain(sess.alloc, inst.coll_recs);
             return e;
         };
-        rb.* = .{ .buf = buf, .size = rbsize, .box = recbox, .owned = inst.owned };
+        rb.* = .{ .buf = buf, .size = rbsize, .box = recbox, .owned = inst.owned, .next = inst.coll_recs };
         recboxes[i] = rb;
         filled.* += 1;
         storage[i] = rec;
@@ -132,7 +165,9 @@ pub fn fillInputMarker(
         slot.* = null;
         inboxes[i] = slot;
         filled.* += 1; // errdefer frees the slot on failure
-        const cv = try inputCollection(sess, items.arr);
+        // T3: record items inside the collection chain their RecBoxes
+        // onto THIS arg's recbox slot (freed after the invoke).
+        const cv = try inputCollection(sess, items.arr, &recboxes[i]);
         slot.* = @ptrCast(@alignCast(cv.data.pdispVal)); // ref transfers
         storage[i] = VARIANT.init();
         storage[i].vt = VT_BYREF | VT_DISPATCH;
@@ -149,8 +184,12 @@ pub fn fillInputMarker(
 /// process-global, the aux needs no OpenDB) — `Add`s each JSON item
 /// in order, and returns a VT_DISPATCH VARIANT the caller owns
 /// (VariantClear of the boxed arg releases it after the target call).
-/// Items marshal through [variantFromValue] (scalars).
-pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIANT {
+/// Items marshal through [collitem.classify]: scalars via
+/// [variantFromValue], `"$record"` rows via the record build (T3).
+/// `recs` receives the RecBox chain of record items — the CALLER owns
+/// it in every outcome (success keeps it for the post-invoke free;
+/// the invoke errdefers / recordinfo errdefer free it on failure).
+pub fn inputCollection(sess: *Session, items: []const json.Value, recs: *?*RecBox) anyerror!VARIANT {
     var aux = try Session.init(sess.alloc);
     defer aux.deinit();
     const fi = registry.newestFixedInterface() orelse {
@@ -179,33 +218,33 @@ pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIA
         var arg = VARIANT.init();
         var key_v = VARIANT.init();
         var has_key = false;
-        defer _ = VariantClear(&arg);
+        // T3: record items are added as byval VT_RECORD and are NEVER
+        // VariantClear'd (RecordClear would call through the
+        // trap-thunked IRecordInfo vtable) — their buffers ride the
+        // RecBox chain until after the target invoke.
+        var is_record = false;
+        defer {
+            if (!is_record) _ = VariantClear(&arg);
+        }
         defer _ = VariantClear(&key_v);
-        // Keyed pair form: ["value", "KEY"] or [{"$date":…}, "KEY"] ->
-        // Col.Add value, key (RepOpt-style named options: START_DATE/
-        // END_DATE/ACC_NAME…; positional-only collections were
-        // live-proven to yield {}).
-        if (item.* == .arr and item.arr.len == 2 and (item.arr[0] == .str or (item.arr[0] == .obj and item.arr[0].get("$date") != null)) and item.arr[1] == .str) {
-            try variantFromValue(sess, &item.arr[0], &arg);
-            try variantFromValue(sess, &item.arr[1], &key_v);
-            has_key = true;
-        } else if (item.* == .obj) {
-            // Nested {"$date": ...} marker -> VT_DATE items (day-book date
-            // positions may demand typed dates, not strings).
-            if (item.get("$date")) |dv| {
-                const ole: f64 = switch (dv.*) {
-                    .str => |s| @import("../../util/helpers.zig").dateToOle(s) orelse return error.BadArgs,
-                    .int => |iv| @floatFromInt(iv),
-                    .float => |f| f,
-                    else => return error.BadArgs,
-                };
-                arg.vt = win32.VT_DATE;
-                arg.data.dblVal = ole;
-            } else {
-                try variantFromValue(sess, item, &arg);
-            }
-        } else {
-            try variantFromValue(sess, item, &arg);
+        switch (collitem.classify(item)) {
+            // Keyed pair form: ["value", "KEY"] or [{"$date":…}|
+            // {"$record":…}, "KEY"] -> Col.Add value, key (RepOpt-style
+            // named options: START_DATE/END_DATE/ACC_NAME…;
+            // positional-only collections were live-proven to yield
+            // {}).
+            .keyed_scalar, .keyed_date, .keyed_record => {
+                if (collitem.classify(&item.arr[0]) == .record) {
+                    try collitem.recordItemVariant(sess, &item.arr[0], recs, &arg, &is_record);
+                } else try scalarItemValue(sess, &item.arr[0], &arg);
+                try variantFromValue(sess, &item.arr[1], &key_v);
+                has_key = true;
+            },
+            // VT_RECORD UDT row (T3) — Collection of records.
+            .record => try collitem.recordItemVariant(sess, item, recs, &arg, &is_record),
+            // Nested {"$date": ...} marker -> VT_DATE items (day-book
+            // date positions may demand typed dates, not strings).
+            .date, .scalar => try scalarItemValue(sess, item, &arg),
         }
         // rgvarg is reversed: pass [key, value] so Add sees (value, key).
         const two: [2]VARIANT = .{ key_v, arg };
@@ -216,6 +255,26 @@ pub fn inputCollection(sess: *Session, items: []const json.Value) anyerror!VARIA
         _ = VariantClear(&added);
     }
     return out;
+}
+
+/// Scalar/Date collection-item value (keyed value slot + positional
+/// form): {"$date": …} -> VT_DATE, everything else via
+/// [variantFromValue] (unchanged iteration-8/20 semantics).
+fn scalarItemValue(sess: *Session, v: *const json.Value, arg: *VARIANT) !void {
+    if (v.* == .obj) {
+        if (v.get("$date")) |dv| {
+            const ole: f64 = switch (dv.*) {
+                .str => |s| helpers.dateToOle(s) orelse return error.BadArgs,
+                .int => |iv| @floatFromInt(iv),
+                .float => |f| f,
+                else => return error.BadArgs,
+            };
+            arg.vt = win32.VT_DATE;
+            arg.data.dblVal = ole;
+            return;
+        }
+    }
+    try variantFromValue(sess, v, arg);
 }
 
 pub fn variantFromValue(self: *Session, v: *const json.Value, out: *VARIANT) !void {

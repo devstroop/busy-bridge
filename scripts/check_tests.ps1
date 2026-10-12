@@ -32,7 +32,9 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 #          146 (series paging F5/F3: seriesPrefix + prefixClause tests).
 #          148 (record $collection fields: releaseOwned no-op test — x2:
 #               recordinfo rides both the main and lib_surface suites).
-$Expected = 148
+#          152 (T3 $collection record items: collitem.zig plan/chain
+#               tests — classify x3 + chainAppend x1, main suite only).
+$Expected = 152
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)

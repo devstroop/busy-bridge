@@ -46,9 +46,12 @@ New-Item -ItemType Directory -Path $run -Force | Out-Null
 $summary = @()
 foreach ($p in $probes) {
     # -InputObject: piping an empty array to ConvertTo-Json yields nothing.
+# -Depth 12 (was 6): deep marker args ($collection of $record rows whose
+# fields carry nested $collection arrays — T3) truncate at low depth and
+# silently turn into garbage the bridge then rejects as bad_args.
     # "@env:NAME" tokens in string args expand to env vars (fixture
     # credentials never enter the repo — GitGuardian-clean by design).
-    $argJson = ConvertTo-Json -InputObject $p.args -Compress -Depth 6
+    $argJson = ConvertTo-Json -InputObject $p.args -Compress -Depth 12
     $argJson = [regex]::Replace($argJson, '"@env:([A-Za-z_][A-Za-z0-9_]*)"', {
         param($m)
         $v = [Environment]::GetEnvironmentVariable($m.Groups[1].Value)

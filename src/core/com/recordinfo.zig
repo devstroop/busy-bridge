@@ -55,6 +55,10 @@ pub const OwnedField = struct { off: u32, vt: u16 };
 pub const RecordInst = struct {
     variant: VARIANT,
     owned: []const OwnedField,
+    /// RecBox chain for record items inside embedded `$collection`
+    /// fields (T3) — attached to the enclosing arg's box via
+    /// RecBox.next, freed with it after the invoke.
+    coll_recs: ?*marshal.RecBox = null,
 };
 
 /// Release the COM-owned values embedded in a record buffer
@@ -122,6 +126,10 @@ pub fn recordFromUdtTi(
     errdefer alloc.free(buf);
     @memset(buf, 0);
     var owned: std.ArrayList(OwnedField) = .empty;
+    // T3: record items built inside embedded $collection fields — the
+    // caller frees the chain via RecBox.next (or this errdefer).
+    var coll_recs: ?*marshal.RecBox = null;
+    errdefer marshal.freeRecChain(alloc, coll_recs);
     errdefer {
         releaseOwned(buf.ptr, owned.items);
         owned.deinit(alloc);
@@ -195,7 +203,12 @@ pub fn recordFromUdtTi(
                         sess.setErr("$collection field '{s}' must be a JSON array", .{entry.key});
                         return error.BadArgs;
                     }
-                    const cv = try marshal.inputCollection(sess, marker.arr);
+                    var field_recs: ?*marshal.RecBox = null;
+                    const cv = marshal.inputCollection(sess, marker.arr, &field_recs) catch |icerr| {
+                        marshal.freeRecChain(alloc, field_recs);
+                        return icerr;
+                    };
+                    marshal.chainAppend(&coll_recs, field_recs);
                     const dsp: ?*win32.IDispatch = @ptrCast(@alignCast(cv.data.pdispVal));
                     @as(*align(1) ?*win32.IDispatch, @ptrCast(dst)).* = dsp;
                     if (dsp != null) try owned.append(alloc, .{ .off = f.off, .vt = 26 });
@@ -231,7 +244,7 @@ pub fn recordFromUdtTi(
         },
     }
     out.r2 = @truncate(d.size); // cleanup size stash (u16)
-    return .{ .variant = out, .owned = try owned.toOwnedSlice(alloc) };
+    return .{ .variant = out, .owned = try owned.toOwnedSlice(alloc), .coll_recs = coll_recs };
 }
 
 /// Probe knob for the $record input shape (iteration 19): BUSY_REC_SHAPE

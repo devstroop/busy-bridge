@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "purpose": "T3 acceptance probes: $collection items that are {\"$record\":{htype,fields}} rows (Collections of UDT records) - callee must EXECUTE; unsupported_arg_type is NOT acceptable",
+    "task": "T3 busy-bridge workmap (feat/t3-collection-records)",
+    "busy": "Rel 14",
+    "target": "COMP0001 DEMO (disposable)",
+    "date": "2026-10-12",
+    "classMap": "SaveVchSeriesGrpConfigForMultipleSeriesCreation(Variant, Variant) is on Busy2L21.CFixedInterface1 per the per-class surface dumps (BUSY Research/surface/Busy2L21_CFixedInterface1.txt:470) - NOT COtherServices",
+    "rules": [
+      "operator runs these serialized (long-running Busy21 COM server holds COMP0001 locks; direct comp calls attach fine)",
+      "-SkipLockCheck is expected/required while that server holds the locks",
+      "write probes self-clean: any business result is OK (including BUSY validation raises); only bridge-side failures (unsupported_arg_type, BadArgs) fail acceptance"
+    ]
+  },
+  "probes": [
+    { "id": "t3-multiseries-record-rows", "issue": "T3", "group": "writes",
+      "method": "SaveVchSeriesGrpConfigForMultipleSeriesCreation", "progId": "Busy2L21.CFixedInterface1",
+      "args": [
+        {"$collection": [
+          {"$record": {"htype": 50333725, "fields": {"tmpVchSerGrpCode": 9001, "VchSerGrpName": "ZZ T3 Grp A", "VchSeriesCodeCol": {"$collection": [1290]}, "tmpVchSeriesNameCol": {"$collection": ["ZigVch9"]}, "VatAccCol": {"$collection": []}, "tmpVatAccNameCol": {"$collection": []}}}},
+          {"$record": {"htype": 50333725, "fields": {"tmpVchSerGrpCode": 9002, "VchSerGrpName": "ZZ T3 Grp B", "VchSeriesCodeCol": {"$collection": [251, 252]}, "tmpVchSeriesNameCol": {"$collection": ["02Main", "03Main"]}, "VatAccCol": {"$collection": []}, "tmpVatAccNameCol": {"$collection": []}}}}
+        ]},
+        {"$collection": ["ZZ T3 Multi Series"]}
+      ],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "T3 primary: a Collection of two full-content udtVchSeriesGrpConfig rows (htype 50333725) passed as p_CodeCol; p_SeriesName guessed as a 1-item Collection. Acceptance = envelope ok:true (callee executed, any business result incl. invisible validation raise); unsupported_arg_type / BadArgs = bridge regression. Rows reuse the iter22 full-content shape that SaveVchSeriesGrpConfig accepted (ok:true)." },
+    { "id": "t3-multiseries-record-rows-str-name", "issue": "T3", "group": "writes",
+      "method": "SaveVchSeriesGrpConfigForMultipleSeriesCreation", "progId": "Busy2L21.CFixedInterface1",
+      "args": [
+        {"$collection": [
+          {"$record": {"htype": 50333725, "fields": {"tmpVchSerGrpCode": 9001, "VchSerGrpName": "ZZ T3 Grp A", "VchSeriesCodeCol": {"$collection": [1290]}, "tmpVchSeriesNameCol": {"$collection": ["ZigVch9"]}, "VatAccCol": {"$collection": []}, "tmpVatAccNameCol": {"$collection": []}}}}
+        ]},
+        "ZZ T3 Multi Series"
+      ],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "arg-shape variant: p_SeriesName as a plain VT_BSTR (single-name reading of the param name). Either this or t3-multiseries-record-rows must execute for acceptance; record which p_SeriesName shape BUSY takes." },
+    { "id": "t3-multiseries-scalar-codes-control", "issue": "T3", "group": "writes",
+      "method": "SaveVchSeriesGrpConfigForMultipleSeriesCreation", "progId": "Busy2L21.CFixedInterface1",
+      "args": [
+        {"$collection": [9001, 9002]},
+        {"$collection": ["ZZ T3 Multi Series"]}
+      ],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "discovery/control: if the scalar-code collection executes but the record rows fail with a TYPE error at the callee (not unsupported_arg_type), p_CodeCol wants plain codes and the UDT-row reading belongs to a different param - evidence, not a failure of T3 marshaling." },
+    { "id": "t3-control-scalar-collection-regression", "issue": "T3", "group": "writes",
+      "method": "SaveVchSeriesGrpConfig", "progId": "Busy2L21.COtherServices",
+      "args": [{"$record": {"htype": 50333725, "fields": {"tmpVchSerGrpCode": 9001, "VchSerGrpName": "ZZ Probe Grp", "VchSeriesCodeCol": {"$collection": [1290]}, "tmpVchSeriesNameCol": {"$collection": ["ZigVch9"]}, "VatAccCol": {"$collection": []}, "tmpVatAccNameCol": {"$collection": []}}}}],
+      "useComp": true, "timeoutSec": 40, "expect": "any",
+      "notes": "regression control (iter22 series-grp-write-full, proven ok:true with no observable persistence): scalar $collection-inside-$record path must stay unchanged after T3." }
+  ]
+}
