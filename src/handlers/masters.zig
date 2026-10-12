@@ -227,6 +227,10 @@ pub fn requireStr(sess: *Session, fields: *const json.Value, key: []const u8, ms
 // reads (masters/read.zig)
 pub const list = read.list;
 pub const get = read.get;
+// Page-SQL builders shared with the golden recorder (issue #9): the
+// recorded keyset pair is the exact SQL list() runs, never a copy.
+pub const listSql = read.listSql;
+pub const keysetClause = read.keysetClause;
 pub const seriesList = read.seriesList;
 pub const SeriesOpts = read.SeriesOpts;
 pub const seriesOf = read.seriesOf;

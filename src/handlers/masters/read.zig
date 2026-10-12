@@ -17,6 +17,24 @@ const Session = com.Session;
 const Kind = m.Kind;
 const ListOpts = m.ListOpts;
 
+/// Strict-resume keyset clause for one list page (issue #7): rows resume
+/// strictly after `after_name` in ORDER BY Name order, so pages never
+/// overlap or skip. Shared with the golden recorder (issue #9) so
+/// recorded transcripts cannot drift from the live builder.
+pub fn keysetClause(alloc: Allocator, after_name: []const u8) ![]u8 {
+    const quoted = try helpers.sqlQuote(alloc, after_name);
+    defer alloc.free(quoted);
+    return std.fmt.allocPrint(alloc, " AND Name > '{s}'", .{quoted});
+}
+
+/// Full page SQL (issue #7 M1; shared with the golden recorder, issue
+/// #9): `top` is `"TOP N "` or `""` (limit 0 = unlimited; the facade
+/// fetches limit+1 so has_more is detectable without a COUNT), `keyset`
+/// from keysetClause (or ""), `pf` the exact-prefix filter clause.
+pub fn listSql(alloc: Allocator, mt: i64, top: []const u8, keyset: []const u8, pf: []const u8) ![]u8 {
+    return std.fmt.allocPrint(alloc, "SELECT {s}Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s}{s} ORDER BY Name", .{ top, mt, keyset, pf });
+}
+
 /// List masters of `kind` normalized to
 /// `{kind, count, truncated, items: [{code, name, parent}], page}`.
 /// `page` = `{limit, has_more, next_cursor}` (opaque; null cursor on the
@@ -32,9 +50,7 @@ pub fn list(sess: *Session, alloc: Allocator, kind: Kind, opts: ListOpts) !json.
             return error.BadArgs;
         };
         defer alloc.free(decoded);
-        const quoted = try helpers.sqlQuote(alloc, decoded);
-        defer alloc.free(quoted);
-        const ks = try std.fmt.allocPrint(alloc, " AND Name > '{s}'", .{quoted});
+        const ks = try keysetClause(alloc, decoded);
         keyset = ks;
         keyset_owned = ks;
     }
@@ -47,19 +63,18 @@ pub fn list(sess: *Session, alloc: Allocator, kind: Kind, opts: ListOpts) !json.
         pf_owned = try prefixClause(alloc, pf);
         pf_clause = pf_owned.?;
     }
-    // limit=0 = unlimited: no TOP clause at all
+    // limit=0 = unlimited: no TOP clause at all; q-mode fetches every
+    // matching row (the client-side filter runs on all of them), so the
+    // empty `top` renders the same SQL the q-branch built verbatim.
+    // fetch limit+1 so "more rows exist" is detectable without a COUNT.
     var top_owned: ?[]u8 = null;
     defer if (top_owned) |t| alloc.free(t);
     var top: []const u8 = "";
-    if (opts.limit != 0) {
+    if (opts.q == null and opts.limit != 0) {
         top_owned = try std.fmt.allocPrint(alloc, "TOP {d} ", .{opts.limit + 1});
         top = top_owned.?;
     }
-    const sql = if (opts.q == null)
-        // fetch limit+1 so "more rows exist" is detectable without a COUNT
-        try std.fmt.allocPrint(alloc, "SELECT {s}Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s}{s} ORDER BY Name", .{ top, mt, keyset, pf_clause })
-    else
-        try std.fmt.allocPrint(alloc, "SELECT Code, Name, ParentGrp FROM Master1 WHERE MasterType = {d}{s}{s} ORDER BY Name", .{ mt, keyset, pf_clause });
+    const sql = try listSql(alloc, mt, top, keyset, pf_clause);
     defer alloc.free(sql);
 
     const rows = try sess.queryToJson(sql);

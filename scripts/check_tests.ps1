@@ -34,7 +34,11 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 #               recordinfo rides both the main and lib_surface suites).
 #          152 (T3 $collection record items: collitem.zig plan/chain
 #               tests — classify x3 + chainAppend x1, main suite only).
-$Expected = 152
+#          156 (T9 live headless-shapes transcript: t9 header + t9 walk
+#               in core/com/replay/tests.zig, x2 — replay suites ride
+#               both the main and lib_surface suites; check_replay now
+#               expects 31).
+$Expected = 156
 
 # 1) canonical run (cached when nothing changed; fails fast with zig's own
 #    failure output if any test fails)

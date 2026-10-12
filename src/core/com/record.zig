@@ -9,6 +9,7 @@
 const std = @import("std");
 const json = @import("../../util/json.zig");
 const Session = @import("session.zig").Session;
+const invoke_mod = @import("invoke.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -56,16 +57,31 @@ pub const Recorder = struct {
         return tmp.toOwnedSlice(self.alloc);
     }
 
-    /// Invoke through the live session, capturing result or error.
+    /// Invoke through the wrapped session, capturing result or error.
     /// Errors are recorded AND returned — the golden script continues.
     pub fn recordInvoke(self: *Recorder, method: []const u8, args: []const json.Value) !json.Value {
+        return self.recordInvokeOn(self.sess, method, args, .{});
+    }
+
+    /// Same, with invoke options (issue #9 — enumerated Collection
+    /// returns: the recorded entry notes `"enumerate_ret":true` so a
+    /// transcript diff shows the shape flag explicitly).
+    pub fn recordInvokeEx(self: *Recorder, method: []const u8, args: []const json.Value, opts: invoke_mod.InvokeOpts) !json.Value {
+        return self.recordInvokeOn(self.sess, method, args, opts);
+    }
+
+    /// Same, against an explicit session (multi-session transcripts —
+    /// the secondary COtherServices session in the golden battery, issue
+    /// #9). One sequential stream regardless of the underlying session.
+    pub fn recordInvokeOn(self: *Recorder, sess: *Session, method: []const u8, args: []const json.Value, opts: invoke_mod.InvokeOpts) !json.Value {
         self.seq += 1;
         const arg_text = try self.argsJson(args);
         defer self.alloc.free(arg_text);
+        const opts_text = if (opts.enumerate_ret) ",\"enumerate_ret\":true" else "";
         var w = json.Writer{ .buf = &self.out, .alloc = self.alloc };
-        if (self.sess.invoke(method, args)) |r| {
+        if (sess.invokeEx(method, args, opts)) |r| {
             var res = r;
-            defer res.deinit(self.sess.alloc);
+            defer res.deinit(sess.alloc);
             const ret_text = try self.valueJson(&res.ret);
             defer self.alloc.free(ret_text);
             try w.raw("{\"seq\":");
@@ -77,6 +93,7 @@ pub const Recorder = struct {
             try w.str(method);
             try w.raw(",\"args\":");
             try w.raw(arg_text);
+            try w.raw(opts_text);
             try w.raw(",\"ok\":true,\"ret\":");
             try w.raw(ret_text);
             try w.raw(",\"outs\":[");
@@ -101,10 +118,11 @@ pub const Recorder = struct {
             try w.str(method);
             try w.raw(",\"args\":");
             try w.raw(arg_text);
+            try w.raw(opts_text);
             try w.raw(",\"ok\":false,\"error\":\"");
             try w.raw(@errorName(err));
             try w.raw("\",\"message\":");
-            try w.str(self.sess.lastError());
+            try w.str(sess.lastError());
             try w.raw("}\n");
             return err;
         }

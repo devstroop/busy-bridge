@@ -57,6 +57,10 @@ pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
         try printOut(io, alloc, "busy-bridge " ++ cli_mod.VERSION ++ " (commit " ++ cli_mod.COMMIT ++ ", zig " ++ comptime versionString() ++ ", x86-windows)\n");
         return 0;
     }
+    // record runs BEFORE the --out format check: for this command the
+    // documented flag is the transcript FILE path (default
+    // transcript.jsonl), not the json|xml wire format (issue #9).
+    if (eql(cmd_name, "record")) return raw.cmdRecord(io, alloc, cli); // JSONL transcript (issue #9)
     const fmt: Format = format.fromOutFlag(cli.getOr("--out", "json")) catch {
         return fail(io, alloc, .json, "bad_args", "invalid --out value (use json or xml)");
     };
@@ -65,7 +69,6 @@ pub fn run(io: Io, alloc: Allocator, cli: Cli) !u8 {
     if (eql(cmd_name, "query")) return raw.cmdQuery(io, alloc, cli, fmt);
     if (eql(cmd_name, "op")) return ops_cmd.cmdOp(io, alloc, cli, fmt); // ERP facade (issue #7)
     if (eql(cmd_name, "call")) return raw.cmdCall(io, alloc, cli, fmt);
-    if (eql(cmd_name, "record")) return raw.cmdRecord(io, alloc, cli); // JSONL transcript (issue #9)
     if (eql(cmd_name, "serve")) return http.serve(io, alloc, cli); // Accept-negotiated
 
     try printOut(io, alloc, "unknown command: ");

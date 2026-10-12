@@ -2,7 +2,7 @@
 #
 # `zig build replay-test` runs the host-native binary: the replay entry
 # plus the replay suites plus the pure json/xml suites it imports
-# (2 + 9 + 18 = 29). Like check_tests, this asserts the EXACT count so a
+# (2 + 11 + 18 = 31). Like check_tests, this asserts the EXACT count so a
 # silently dropped suite turns CI red instead of green.
 #
 #   powershell scripts/check_replay.ps1            # enforce (default)
@@ -16,11 +16,12 @@ param([switch]$ReportOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 
-# 2 entry blocks (src/replay.zig + transport/replay_suite.zig) + 9 replay
-# suites (core/com/replay/tests.zig) + 18 pure json/xml suites pulled in
-# via top-level imports. Update in the same commit as any intentional
-# add/remove — the diff makes the intent reviewable.
-$Expected = 29
+# 2 entry blocks (src/replay.zig + transport/replay_suite.zig) + 11 replay
+# suites (core/com/replay/tests.zig: 9 synthetic-seed + 2 T9 live
+# headless-shapes) + 18 pure json/xml suites pulled in via top-level
+# imports. Update in the same commit as any intentional add/remove — the
+# diff makes the intent reviewable.
+$Expected = 31
 
 Push-Location $repo
 try {

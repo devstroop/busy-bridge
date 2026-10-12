@@ -200,3 +200,105 @@ test "replay staleness flag on busy_version mismatch" {
     try testing.expect(drifted.stale_warn);
     try testing.expectEqualStrings("Rel 14", drifted.busy_version);
 }
+
+// ---- T9 headless-shapes transcript (live-captured, issue #9) --------------
+//
+// testdata/t9-headless-shapes.jsonl is NOT synthetic: it is the golden
+// battery's live capture on BUSY Rel 14 / COMP0001 (regenerate with
+// `busy-bridge record --comp COMP0001 --out <file>` after a BUSY upgrade).
+// It pins the shapes newly reachable headless: enumerated Collection
+// returns (company + FY pickers), the masters keyset page pair (exact
+// SQL via the shared listSql builder), and the $record-input UDT
+// initializer on a second class (COtherServices).
+const golden_t9 = @embedFile("testdata/t9-headless-shapes.jsonl");
+
+test "replay t9 headless-shapes header" {
+    var r = try Replay.init(testing.allocator, golden_t9, "Rel 14");
+    defer r.deinit();
+    try testing.expect(!r.synthetic);
+    try testing.expectEqualStrings("Rel 14", r.busy_version);
+    try testing.expect(!r.stale_warn);
+    // Pinned entry count: a truncated capture turns CI red, not quiet.
+    try testing.expectEqual(@as(usize, 9), r.count());
+}
+
+test "replay t9 headless-shapes walk" {
+    var r = try Replay.init(testing.allocator, golden_t9, null);
+    defer r.deinit();
+    const a = testing.allocator;
+
+    // seq 1: OpenDB ok.
+    var open_args = [_]json.Value{ .{ .str = "C:\\BusyWin\\" }, .{ .str = "C:\\BusyWin\\DATA\\" }, .{ .str = "COMP0001" } };
+    var ok = try r.invoke("OpenDB", &open_args);
+    defer ok.deinit(a);
+    try testing.expect(ok.ret == .bool and ok.ret.bool);
+
+    // seq 2: enumerated company picker - collection of 10-field rows
+    // (company name/code/fyStart/flag + slots + GUID). Row count is a
+    // fixture property (COMP0001 is open here, so the picker lists the
+    // other company); the SHAPE is the contract.
+    var cl_args = [_]json.Value{.{ .str = "C:\\BusyWin\\DATA\\" }};
+    var cl = try r.invoke("GetCompList", &cl_args);
+    defer cl.deinit(a);
+    try testing.expect(cl.ret == .arr and cl.ret.arr.len >= 1);
+    for (cl.ret.arr) |*row| {
+        try testing.expect(row.* == .arr and row.arr.len == 10);
+        try testing.expect(row.arr[0] == .str);
+        try testing.expect(row.arr[1] == .str);
+    }
+
+    // seq 3 + 4: masters keyset page pair - page 2 resumes strictly
+    // after page 1's last Name (no overlap, no skip, ascending order).
+    var p1 = try r.queryToJson("SELECT TOP 3 Code, Name, ParentGrp FROM Master1 WHERE MasterType = 2 ORDER BY Name");
+    defer p1.deinit(a);
+    try testing.expect(p1 == .arr and p1.arr.len == 3);
+    var p2 = try r.queryToJson("SELECT TOP 3 Code, Name, ParentGrp FROM Master1 WHERE MasterType = 2 AND Name > 'Add. Cess on GST Output' ORDER BY Name");
+    defer p2.deinit(a);
+    try testing.expect(p2 == .arr and p2.arr.len == 3);
+    const p1_last = p1.arr[p1.arr.len - 1].get("Name").?.str;
+    const p2_first = p2.arr[0].get("Name").?.str;
+    try testing.expect(std.mem.order(u8, p2_first, p1_last) == .gt);
+
+    // seq 5: plain query shape still recorded.
+    var top2 = try r.queryToJson("SELECT TOP 2 Code, Name FROM Master1");
+    defer top2.deinit(a);
+    try testing.expect(top2 == .arr and top2.arr.len == 2);
+
+    // seq 6 + 7: forced error paths map back to the live error set.
+    var bogus = [_]json.Value{};
+    try testing.expectError(error.NoSuchMember, r.invoke("NoSuchMethod_Bogus", &bogus));
+    try testing.expect(std.mem.indexOf(u8, r.lastError(), "unknown member") != null);
+    try testing.expectError(error.NoRecordset, r.queryToJson("SELECT * FROM NoSuchTable_Xyz"));
+
+    // seq 8: enumerated FY picker - single-FY company -> [2026].
+    var fy_args = [_]json.Value{.{ .str = "COMP0001" }};
+    var fy = try r.invoke("GetAllFinYearsOfSpecificCompCode", &fy_args);
+    defer fy.deinit(a);
+    try testing.expect(fy.ret == .arr and fy.ret.arr.len == 1);
+    try testing.expect(fy.ret.arr[0] == .int and fy.ret.arr[0].int == 2026);
+
+    // seq 9: $record-input UDT initializer (udtVchSeriesGrpConfig,
+    // htype 50333725, inert defaults) - void initializer returns null.
+    const empty_coll: json.Value = .{ .arr = @constCast(&[_]json.Value{}) };
+    const coll_entry = [_]json.Value.Entry{.{ .key = "$collection", .val = empty_coll }};
+    var udt_fields = [_]json.Value.Entry{
+        .{ .key = "tmpVchSerGrpCode", .val = .{ .int = 0 } },
+        .{ .key = "VchSerGrpName", .val = .{ .str = "" } },
+        .{ .key = "VchSeriesCodeCol", .val = .{ .obj = @constCast(&coll_entry) } },
+        .{ .key = "tmpVchSeriesNameCol", .val = .{ .obj = @constCast(&coll_entry) } },
+        .{ .key = "VatAccCol", .val = .{ .obj = @constCast(&coll_entry) } },
+        .{ .key = "tmpVatAccNameCol", .val = .{ .obj = @constCast(&coll_entry) } },
+    };
+    var udt_rec = [_]json.Value.Entry{
+        .{ .key = "htype", .val = .{ .int = 50333725 } },
+        .{ .key = "fields", .val = .{ .obj = @constCast(&udt_fields) } },
+    };
+    const record_arg: json.Value = .{ .obj = @constCast(&[_]json.Value.Entry{.{ .key = "$record", .val = .{ .obj = @constCast(&udt_rec) } }}) };
+    var init_args = [_]json.Value{record_arg};
+    var init_res = try r.invoke("InitUdtVSGrpConfig", &init_args);
+    defer init_res.deinit(a);
+    try testing.expect(init_res.ret == .null);
+
+    // End of transcript: any further call is stale, never a silent pass.
+    try testing.expectError(error.StaleTranscript, r.invoke("OpenDB", &open_args));
+}
