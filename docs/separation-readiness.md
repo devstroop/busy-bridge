@@ -32,6 +32,7 @@ matches are doc-set *names* (provenance), not references.
 | `scripts/check_size.ps1` (0 violations; allowlist: 2 by-design) | ✅ |
 | `scripts/check_tests.ps1` — **new**: asserts the exact discovered test count (73) | ✅ |
 | `scripts/docs/check_links.py` (73 links) | ✅ |
+| `scripts/check_fork_parity.ps1` — **new** (issue #63): cross-repo slice parity vs busy-server (auth zero-tolerance) | ✅ |
 | **GitHub Actions CI on master** | ✅ `success` — was **red** until `faeb7ff` fixed a real bug the discovery fix had exposed (see §4) |
 | Live `run-all.ps1` (11 suites, serialized vs BUSY) | ✅ at last run (post-issue-011 merge) |
 

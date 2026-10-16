@@ -1,0 +1,83 @@
+{
+    "schema":  1,
+    "note":  "Fork-parity manifest (issue #63). pairs = mirrored files; bridge_only = bridge-only by design; allowlist = known real drift, each entry needs reason + pinned sha256 of the CANON (import-normalized, LF) text. Regenerate lists with -InitManifest, re-pin drift with -UpdatePins.",
+    "auth_zero_tolerance":  [
+                                "handlers/auth.zig",
+                                "handlers/rights.zig",
+                                "transport/auth.zig",
+                                "transport/http.zig",
+                                "transport/http/routes_auth.zig",
+                                "transport/http/routes_ops.zig",
+                                "transport/http/shared.zig",
+                                "transport/sessions.zig",
+                                "transport/user_sessions.zig",
+                                "transport/v1.zig"
+                            ],
+    "pairs":  [
+                  "handlers.zig",
+                  "handlers/auth.zig",
+                  "handlers/batch.zig",
+                  "handlers/catalog.zig",
+                  "handlers/common.zig",
+                  "handlers/common/cursor.zig",
+                  "handlers/common/dates.zig",
+                  "handlers/common/sql.zig",
+                  "handlers/common/value.zig",
+                  "handlers/daybook.zig",
+                  "handlers/exec.zig",
+                  "handlers/golden.zig",
+                  "handlers/masters.zig",
+                  "handlers/masters/fields.zig",
+                  "handlers/masters/read.zig",
+                  "handlers/masters/write.zig",
+                  "handlers/reports.zig",
+                  "handlers/rights.zig",
+                  "handlers/vouchers.zig",
+                  "handlers/vouchers/read.zig",
+                  "handlers/vouchers/write.zig",
+                  "transport/auth.zig",
+                  "transport/cli.zig",
+                  "transport/envelope.zig",
+                  "transport/format.zig",
+                  "transport/format/call.zig",
+                  "transport/format/wire.zig",
+                  "transport/format/xml_envelopes.zig",
+                  "transport/http.zig",
+                  "transport/http/routes_auth.zig",
+                  "transport/http/routes_meta.zig",
+                  "transport/http/routes_ops.zig",
+                  "transport/http/routes_raw.zig",
+                  "transport/http/shared.zig",
+                  "transport/sessions.zig",
+                  "transport/user_sessions.zig",
+                  "transport/v1.zig"
+              ],
+    "bridge_only":  [
+                        "transport/commands.zig",
+                        "transport/commands/ops.zig",
+                        "transport/commands/raw.zig",
+                        "transport/replay_suite.zig"
+                    ],
+    "allowlist":  {
+                      "handlers/golden.zig":  {
+                                                  "reason":  "T9 golden-read flow (issue #9 / PR #62) landed bridge-side; server copy is the pre-T9 version - server port pending",
+                                                  "bridge_sha256":  "c74501fcffab22636e033ce1892833a76911cf12c1f6f5d60ea55d6bf19bd108",
+                                                  "server_sha256":  "ced3300ce076f8473b7884bf96bc9f847dc691c68698004430552c3c40a61903"
+                                              },
+                      "handlers/masters.zig":  {
+                                                   "reason":  "T9 (#9 / PR #62): bridge re-exports listSql/keysetClause for the golden recorder; server port pending",
+                                                   "bridge_sha256":  "96659b0899f827e338976c6f0f5f3d0e91551839dc0a543bf555f25bfd60e769",
+                                                   "server_sha256":  "92085d8a47c570246bf3e7ca0c6dbdee4866e917272efec3faa9033e0b23ba87"
+                                               },
+                      "handlers/masters/read.zig":  {
+                                                        "reason":  "T9 (#9 / PR #62): bridge keysetClause + sqlQuote keyset pagination; server port pending",
+                                                        "bridge_sha256":  "55f77cdf68662e6afb197c62542bdbcfe9be72a273992e3c818dc9553069280c",
+                                                        "server_sha256":  "276a84f86e3091cf0168d8159750bf64c75ac4bee5446b8d3cfed505adf738d5"
+                                                    },
+                      "transport/cli.zig":  {
+                                                "reason":  "By design: bridge CLI command surface (classes/surface/query/call + serve) vs server serve-only usage - permanent divergence",
+                                                "bridge_sha256":  "ca356ebe7a6c3e7a6b794c4660ba47b2d5af300ad2168b95bc42e5483e0bcdd5",
+                                                "server_sha256":  "46de0bc092de573002f0ceb4823df5c6035b14d4864b99ab3590fc619cc44422"
+                                            }
+                  }
+}
