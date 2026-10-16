@@ -71,12 +71,13 @@ $authSlice = @(
 
 function Get-RelFiles($root) {
     Get-ChildItem -Path (Join-Path $root 'src') -Recurse -Include *.zig |
-        Where-Object { $_.FullName -match '\\src\\(handlers|transport)(\\|\.zig$)' } |
+        Where-Object { $_.FullName -match '[\\/]src[\\/](handlers|transport)([\\/]|\.zig$)' } |
         ForEach-Object { $_.FullName.Substring(($root.Length + 5)).Replace('\', '/') }
 }
 
 function Get-CanonText($rel, $side) {
-    $text = ([IO.File]::ReadAllText((Join-Path $script:rootOf[$side] "src\$rel"))).Replace("`r`n", "`n")
+    $path = Join-Path (Join-Path $script:rootOf[$side] 'src') $rel
+    $text = ([IO.File]::ReadAllText($path)).Replace("`r`n", "`n")
     if ($side -eq 'bridge') {
         return [regex]::Replace($text, '@import\("((?:\.\./)*(?:core|util)(?:/[A-Za-z0-9_]+)*\.zig)"\)', {
             param($m)
@@ -159,8 +160,8 @@ foreach ($f in $authSlice) { if ($pairsMf -notcontains $f) { $violations.Add("au
 $identical = 0; $impOnly = 0; $allowlisted = 0
 foreach ($f in $pairsMf) {
     if ($pairsActual -notcontains $f) { continue } # already reported above
-    $bRaw = ([IO.File]::ReadAllText((Join-Path $BridgeRoot "src\$f"))).Replace("`r`n", "`n")
-    $sRaw = ([IO.File]::ReadAllText((Join-Path $ServerRoot "src\$f"))).Replace("`r`n", "`n")
+    $bRaw = ([IO.File]::ReadAllText((Join-Path (Join-Path $BridgeRoot 'src') $f))).Replace("`r`n", "`n")
+    $sRaw = ([IO.File]::ReadAllText((Join-Path (Join-Path $ServerRoot 'src') $f))).Replace("`r`n", "`n")
     if ($bRaw -eq $sRaw) { $identical++; continue }
     $bCanon = Get-CanonText $f 'bridge'
     $sCanon = Get-CanonText $f 'server'
