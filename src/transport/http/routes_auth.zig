@@ -5,8 +5,12 @@
 //! Login validates through the probe-verified path (report §4–§6):
 //! company ensure → CheckIfLoginDetRequired → ValidUserPassword →
 //! GetCompConfigJSON payload. `CheckIfLoginDetRequiredFromDatabase`
-//! (UI trap) is never used. Provisional rights: the configured super
-//! user gets {"all":true}, everyone else deny-all {} (contract §3).
+//! (UI trap) is never used. Rights are resolved at login through
+//! handlers/rights.zig `resolve()` (contract §3, BUSY-012): the
+//! configured super user gets full rights, regular users get
+//! per-repID report rights from CheckUserRightsForReports (fail-closed),
+//! voucher_types/masters stay deny-all {} pending Collection
+//! enumeration.
 const std = @import("std");
 const json = @import("../../util/json.zig");
 const busyc = @import("../../core/com.zig");
