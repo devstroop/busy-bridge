@@ -169,21 +169,3 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/check_replay.ps1
-
-  # Fork-parity gate (issue #63): the mirrored handlers/transport slice
-  # must stay import-rewrites-only vs busy-server; the auth slice is
-  # zero-tolerance. Fast standalone job — no zig, no BUSY.
-  fork-parity:
-    name: fork-parity (busy-server)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/checkout@v4
-        with:
-          repository: devstroop/busy-server
-          path: busy-server
-
-      - name: Check fork parity
-        shell: pwsh
-        run: ./scripts/check_fork_parity.ps1 -ServerRoot "$env:GITHUB_WORKSPACE/busy-server"

@@ -238,3 +238,4 @@ if ($violations.Count -gt 0) {
     exit 1
 }
 Write-Output ("fork parity OK: {0} pairs ({1} identical, {2} imports-only, {3} pinned drift), {4} bridge-only, 0 server-only; roots: bridge={5} server={6}" -f $pairsMf.Count, $identical, $impOnly, $allowlisted, $bridgeOnlyMf.Count, $BridgeRoot, $ServerRoot)
+exit 0

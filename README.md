@@ -482,10 +482,10 @@ direction) and `check_size.ps1` (file size — oversized files must be split
 per [issue 011](docs/issues/011-source-restructure.md) or carry a
 documented allowlist entry with a written reason).
 
-**Cross-repo gate** (enforced in CI): `check_fork_parity.ps1` keeps the
-mirrored `src/handlers`+`src/transport` slice identical to `busy-server`
-up to `@import` rewrites — the auth slice is zero-tolerance; known drift
-is pinned with written reasons
+**Cross-repo gate** (busy-server CI + locally): `check_fork_parity.ps1`
+keeps the mirrored `src/handlers`+`src/transport` slice identical to
+`busy-server` up to `@import` rewrites — the auth slice is zero-tolerance;
+known drift is pinned with written reasons
 ([`docs/fork-parity.md`](docs/fork-parity.md)).
 
 **Source layout & conventions** (barrels, test discovery, route dispatch
@@ -493,8 +493,8 @@ order, how to add a command/op/route): [`docs/architecture.md`](docs/architectur
 
 CI (GitHub Actions, ubuntu + windows): fmt → layer check → build → unit
 tests (Windows runner; test binary is x86-windows) → replay tests
-(host-native on both OSes, no BUSY) → fork parity vs busy-server
-(ubuntu, no zig needed).
+(host-native on both OSes, no BUSY). Fork parity vs busy-server runs in
+busy-server's CI + locally (see [`docs/fork-parity.md`](docs/fork-parity.md)).
 
 Live-BUSY tests (require BUSY + a company; **not** runnable in CI):
 

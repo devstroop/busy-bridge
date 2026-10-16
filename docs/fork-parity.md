@@ -63,9 +63,16 @@ powershell scripts/check_fork_parity.ps1 -UpdatePins         # re-pin reviewed d
 powershell scripts/check_fork_parity.ps1 -InitManifest       # rebuild pair lists (keeps allowlist)
 ```
 
-CI: the `fork-parity` job in `.github/workflows/ci.yml` checks out
-`devstroop/busy-server` at its default branch and runs the gate — a
-deliberate one-sided auth edit turns CI red (issue #63 acceptance).
+CI: the gate runs in **busy-server's** workflow
+(`.github/workflows/fork-parity.yml` — on server pushes/PRs, daily, and
+on manual dispatch). Direction note: busy-server is a **private** repo
+while this one is public and org policy disables deploy keys, so the
+credential-free fetch direction is server-side: server checkout (its own
+token) + unauthenticated clone of this repo. A one-sided edit here turns
+that job red within a day (immediately on the next server-side change);
+bridge contributors run the gate locally before pushing mirrored edits
+(issue #63 acceptance: a deliberate one-sided auth edit turns the gate
+red — verified).
 
 ## Relationship to the other gates
 

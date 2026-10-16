@@ -11,8 +11,9 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
   `src/handlers`+`src/transport` slice (37 pairs) stays import-rewrites-only
   vs busy-server; the 10-file auth slice is zero-tolerance, known drift is
   pinned with written reasons (3 × T9-port-pending, `transport/cli.zig` by
-  design). New CI job `fork-parity` checks out busy-server and runs the
-  gate; policy + accounting in `docs/fork-parity.md`.
+  design). The gate runs in busy-server's CI (daily + on server changes —
+  busy-server is private, so the fetch direction is server-side) and
+  locally; policy + accounting in `docs/fork-parity.md`.
 - **Docs regression (2026-10-12)**: documentation re-verified against the
   shipped surface — `scripts/docs/check_links.py` 77 local links / 0
   broken; `docs/operations.md` and `docs/function-reference.md`
