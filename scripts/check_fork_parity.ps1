@@ -27,6 +27,11 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $ServerRoot) { $ServerRoot = Join-Path (Split-Path $BridgeRoot -Parent) 'busy-server' }
 if (-not $Manifest) { $Manifest = Join-Path $PSScriptRoot 'fork-parity-manifest.json' }
+# Canonicalize roots: relative paths break the bridge/server prefix-strip
+# (enumerated files carry absolute paths; the manifest keys are relative).
+$BridgeRoot = (Resolve-Path $BridgeRoot).Path
+$ServerRoot = (Resolve-Path $ServerRoot).Path
+if (Test-Path $Manifest) { $Manifest = (Resolve-Path $Manifest).Path }
 
 # busy_bridge package exports (lib.zig) -> bridge-tree path. Extend when
 # lib.zig gains exports; unmapped modules fail loudly (exit 2).
