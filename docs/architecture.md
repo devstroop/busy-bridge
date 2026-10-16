@@ -141,6 +141,7 @@ never touch sockets.
 |---|---|---|
 | `check_layers.ps1` | `util→util`, `core→+core`, `handlers→+core+util`, `transport→+handlers+core+util`, `main→transport` | none |
 | `check_size.ps1` | `src/**/*.zig` ≤ 400 physical lines (warn > 300), `tests/**/*.ps1` ≤ 200; **enforce by default**, `-ReportOnly` to preview | allowlist entries need a written reason: `[by design]` permanent (catalog table, parser unit) or `[transitional]` tied to an open split phase (delete when it lands) |
+| `check_fork_parity.ps1` | cross-repo: the mirrored `handlers`+`transport` slice stays import-rewrites-only vs busy-server ([`fork-parity.md`](fork-parity.md)) | allowlist entries need a reason + pinned canonical-text hashes; the auth slice has none (zero-tolerance) |
 
 History: the restructure that produced this layout is issue
 [`011-source-restructure.md`](issues/011-source-restructure.md); the

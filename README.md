@@ -474,6 +474,7 @@ powershell scripts/check_size.ps1     # structure gate: src ≤400, tests ≤200
                                       #   (-ReportOnly to preview; enforcement default)
 powershell scripts/check_tests.ps1    # test-discovery gate: exact count (146)
 powershell scripts/check_replay.ps1   # replay gate: exact count (29, Windows)
+powershell scripts/check_fork_parity.ps1 # cross-repo gate vs busy-server (issue #63)
 ```
 
 **Structure gates** (both enforced): `check_layers.ps1` (dependency
@@ -481,12 +482,19 @@ direction) and `check_size.ps1` (file size — oversized files must be split
 per [issue 011](docs/issues/011-source-restructure.md) or carry a
 documented allowlist entry with a written reason).
 
+**Cross-repo gate** (busy-server CI + locally): `check_fork_parity.ps1`
+keeps the mirrored `src/handlers`+`src/transport` slice identical to
+`busy-server` up to `@import` rewrites — the auth slice is zero-tolerance;
+known drift is pinned with written reasons
+([`docs/fork-parity.md`](docs/fork-parity.md)).
+
 **Source layout & conventions** (barrels, test discovery, route dispatch
 order, how to add a command/op/route): [`docs/architecture.md`](docs/architecture.md).
 
 CI (GitHub Actions, ubuntu + windows): fmt → layer check → build → unit
 tests (Windows runner; test binary is x86-windows) → replay tests
-(host-native on both OSes, no BUSY).
+(host-native on both OSes, no BUSY). Fork parity vs busy-server runs in
+busy-server's CI + locally (see [`docs/fork-parity.md`](docs/fork-parity.md)).
 
 Live-BUSY tests (require BUSY + a company; **not** runnable in CI):
 
