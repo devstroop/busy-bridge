@@ -1,8 +1,20 @@
-# `/auth` API contract (draft RFC)
+# `/auth` API contract
 
-**Status: DRAFT — shaped by the P0 probe report
-([`docs/probe/2026-10-09-headless-contracts.md`](probe/2026-10-09-headless-contracts.md));
-rights schema fixture-blocked (BUSY-002). Implements backlog BUSY-010/011.**
+**Status: SHIPPED** — user sessions (BUSY-010/011), per-repID report
+rights (BUSY-012) and the raw tier (BUSY-013) are implemented and
+suite-tested on both sides of the fork (live suites 09-auth,
+12-report-rights, 13-raw-tier in busy-bridge and busy-server). Sessions
+are opt-in (`serve --require-session`), the raw tier is opt-in
+(`serve --allow-raw`); the resulting posture matrix is in both
+READMEs' Security sections. Origin: the P0 probe report
+([`docs/probe/2026-10-09-headless-contracts.md`](probe/2026-10-09-headless-contracts.md)).
+
+**Ownership / consumers**: the canonical runtime is **busy-server**
+(private; fork of this repo's serve — kept in lockstep by the
+fork-parity gate, see [`docs/fork-parity.md`](fork-parity.md)); the
+**busy_app** client consumes `/auth/*` and the session posture. This
+contract is normative for both runtimes; when the two repos' transport
+slices drift, the gate (not this document) is the tripwire.
 
 Identity is **BUSY-backed**: the bridge never invents a user store —
 credentials are validated through verified COM primitives, rights come
@@ -13,7 +25,7 @@ from BUSY, and every write is attributed to the validated username.
 | Tier | Credential | Scope | Status |
 |---|---|---|---|
 | Device | `BUSY_BRIDGE_TOKEN` (existing) | transport gate: device ↔ server; loopback posture unchanged | existing, unchanged |
-| User | opaque **session token** (new) | identity: user + company + FY; required for `/v1` and `/op` writes once P1 ships | this contract |
+| User | opaque **session token** (shipped, BUSY-011) | identity: user + company + FY; required for `/v1` and `/op` writes when `serve --require-session` is set | this contract |
 
 Rules:
 - Session tokens: 256-bit CSPRNG, base64url; stored server-side
@@ -28,6 +40,9 @@ Rules:
   primitive, discarded.
 
 ## 2. Endpoints
+
+All three routes are implemented (`src/transport/http/routes_auth.zig`,
+mirrored server-side; live suite 09-auth).
 
 ### `POST /auth/login`
 ```json
@@ -90,13 +105,20 @@ Records BUSY-side login/logout where the verified primitive allows.
   "can_authorise": false
 }
 ```
-- Provisional: rights for **regular users** come from BUSY's own
-  per-user rights (candidate primitive `CheckUserRightsForReports` on
-  `COtherServices1` — shape pending the typed-ByRef fix, report §4).
-  The mobile-user rights UDT (`GetMobileUserRightsJSONstr`) is out of
-  scope (no BDEP). Until per-user rights are captured, non-super users
-  receive deny-all with explicit allow-lists; the super user
-  (`admin`) receives full rights.
+- **Shipped (BUSY-012)** — resolution site `src/handlers/rights.zig`
+  `resolve()`, called at login and on the `/auth/me` replay:
+  - `reports` are **BUSY-backed per repID**: the super user
+    short-circuits to full; regular users get one
+    `CheckUserRightsForReports(repID)` call per id in `rep_ids` through
+    a transient `COtherServices1` aux (company state is
+    process-global). Any invoke error **fails closed** for that report.
+  - `voucher_types` and `masters` stay `{}` (deny-all): no COM
+    primitive exists for vouchers and the masters key space is blocked
+    on `GetVchTypesForRights` Collection enumeration.
+  - `can_authorise` stays `false` (no primitive yet).
+  - Super-user rights are keyed to the configured `--super-user`
+    (default `Admin`) and the session stash (`rights_all` /
+    `report_mask`), not re-derived per request.
 - Enforcement point: single policy layer on `/v1` + `/op` (BUSY-012).
   Unknown/malformed rights ⇒ **deny**. The client may hide UI by
   rights, but the server never trusts the client's copy.
@@ -106,10 +128,12 @@ Records BUSY-side login/logout where the verified primitive allows.
 `{"ok": false, "code": "<machine>", "error": "<message>"}` with HTTP
 status: `invalid_credentials` 401 · `unauthorized` (no/wrong session)
 401 · `session_expired` 401 · `company_not_found` 404 ·
-`query_not_allowed` 403 (existing) · `rights_denied` 403 (new, see
-below). Login responses never reveal whether the username exists.
+`query_not_allowed` 403 (existing) · `rights_denied` 403 ·
+`raw_tier_denied` 403 (raw `/call`/`/query` without admin session or
+`--allow-raw`). Login responses never reveal whether the username
+exists.
 
-## 5. Enforcement summary (once P1 ships)
+## 5. Enforcement summary (shipped)
 
 | Surface | Gate |
 |---|---|
@@ -119,22 +143,32 @@ below). Login responses never reveal whether the username exists.
 | `/v1/*` reads | session + rights (master ranges, report ids) |
 | `/v1/*` writes | session + operation rights + attribution (`p_UserName` on the save path) |
 | `/op/*` | same as `/v1` (facade parity) |
-| raw `/call`, `/query` | device tier **plus** operator flag or explicit admin session (BUSY-013); never available to ordinary sessions |
+| raw `/call`, `/query` | device tier **plus** `--allow-raw` (any session, operator tier) or an explicit admin session (BUSY-013); never available to ordinary sessions |
+
+The gates above apply when `--require-session` is set; without it the
+server runs the legacy device-tier posture (below). Derivation sites:
+`auth_mode` and `raw_tier` in `src/transport/http.zig` `serve()`
+(`auth_mode = session|token|off`, `raw_tier = open|operator|admin`),
+surfaced on the boot line and in `GET /info` (`"auth_mode"`,
+`"raw_tier"`) — the posture of a live server is always observable
+without reading flags off the process list. The flag-combination →
+posture matrix lives in both READMEs' Security sections.
 
 Loopback dev posture: when bound to loopback **without** a configured
 auth requirement, existing tokenless flows keep working (migration
 compatibility with today's live suites and busy_app dev mode); the
 policy is reported in `/info` (`"auth_mode": "off|token|session"`).
 
-## 6. Open items (fixture/blocker-dependent)
+## 6. Open items
 
-1. ~~Regular-user credential primitive~~ — **RESOLVED** (iteration 6):
-   `ValidUserPassword` verified with a +/− fixture pair (report §6).
-   `/auth/login` implementation (BUSY-011) is GO.
-2. `GetJSON2*`/`SaveVchFromJson` remaining param shapes (0x80020005
+1. `GetJSON2*`/`SaveVchFromJson` remaining param shapes (0x80020005
    persists on non-ByRef params; matrix next iteration).
-3. Audit hooks: `SaveLogInLogOutUserLog` / `SaveUserLOG` activation
+2. Audit hooks: `SaveLogInLogOutUserLog` / `SaveUserLOG` activation
    (BUSY-023) — verify headless first.
-4. Multi-FY sessions: `fy` semantics for `OpenDBForYear` —
+3. Multi-FY sessions: `fy` semantics for `OpenDBForYear` —
    `UserControl.FinYrs` shows per-user FY prefs exist; wire after
-   enumeration lands (BUSY-004).
+   enumeration lands (BUSY-004). Tracked server-side (workmap);
+   busy-server currently ignores `fy` on login.
+4. Voucher/master rights population (`voucher_types`/`masters` stay
+   `{}`): needs `GetVchTypesForRights` Collection enumeration (T3
+   `$collection`-of-records work, busy-bridge PR #50).

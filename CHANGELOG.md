@@ -6,6 +6,16 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **Auth contract: DRAFT → shipped (issue #64)**: `docs/auth-contract.md`
+  refreshed to shipped status — sessions (BUSY-010/011), per-repID report
+  rights (BUSY-012, `rights.resolve()`), raw tier (BUSY-013); §3 rewritten
+  to the shipped resolution behavior, §5 retitled + derivation sites
+  (`http.zig` `auth_mode`/`raw_tier`) named, §6 pruned to genuinely open
+  items, ownership banner names busy-server (canonical runtime, fork-parity
+  gate) and busy_app as consumers. `routes_auth.zig` header caught up
+  (stale "provisional rights" sentence replaced with the resolve() path);
+  busy-server mirror follows in a companion PR (auth slice is
+  zero-tolerance).
 - **Fork-parity gate (issue #63)**: `scripts/check_fork_parity.ps1` +
   committed `scripts/fork-parity-manifest.json` enforce that the mirrored
   `src/handlers`+`src/transport` slice (37 pairs) stays import-rewrites-only
