@@ -6,6 +6,14 @@ version via `busy-bridge version` (tag-derived since 0.1.0).
 
 ## [Unreleased]
 
+- **README security posture matrix (issue #65)**: new "Security posture
+  by serve flags" subsection — flag combo → `auth_mode` → `raw_tier` →
+  reachable surface, every row verified live against the boot line and
+  `GET /info`; the `--token`-alone sharp edge documented; production
+  checklist (`--token` + `--require-session` together, bindAllowed,
+  `--super-user`, session TTLs, data-dir ACLs). Threat-model bullet
+  caught up with shipped per-repID report rights. Contract §5 corrected:
+  `raw_tier` is boot-line only, `/info` carries `auth_mode`.
 - **Auth contract: DRAFT → shipped (issue #64)**: `docs/auth-contract.md`
   refreshed to shipped status — sessions (BUSY-010/011), per-repID report
   rights (BUSY-012, `rights.resolve()`), raw tier (BUSY-013); §3 rewritten
