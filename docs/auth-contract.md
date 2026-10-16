@@ -149,10 +149,10 @@ The gates above apply when `--require-session` is set; without it the
 server runs the legacy device-tier posture (below). Derivation sites:
 `auth_mode` and `raw_tier` in `src/transport/http.zig` `serve()`
 (`auth_mode = session|token|off`, `raw_tier = open|operator|admin`),
-surfaced on the boot line and in `GET /info` (`"auth_mode"`,
-`"raw_tier"`) — the posture of a live server is always observable
-without reading flags off the process list. The flag-combination →
-posture matrix lives in both READMEs' Security sections.
+surfaced on the boot line (both) and in `GET /info` (`auth_mode`) —
+the posture of a live server is always observable without reading
+flags off the process list. The flag-combination → posture matrix
+lives in both READMEs' Security sections.
 
 Loopback dev posture: when bound to loopback **without** a configured
 auth requirement, existing tokenless flows keep working (migration

@@ -195,6 +195,43 @@ otherwise:
 | request with right token | `Authorization: Bearer <t>` or `X-Bridge-Token: <t>` (scheme case-insensitive) |
 | `GET /info` | always reachable without a token: identity/routes only, no company data |
 
+### Security posture by serve flags
+
+What each flag combination actually leaves open (`auth_mode` and
+`raw_tier` are derived in `src/transport/http.zig` `serve()` and were
+verified live against the boot line and `GET /info` for every row):
+
+| serve flags | auth_mode | raw_tier | reachable |
+|---|---|---|---|
+| (none) — loopback | `off` | `open` | everything on loopback, no identity |
+| `--token X` | `token` | `open` | device tier; `X` required; **still no user identity, rights or attribution** on `/v1`, `/op`, `/call`, `/query` |
+| `--token X --require-session` | `session` | `admin` | `/auth/*` + session-gated `/v1`, `/op`; raw `/call`, `/query` need an admin session or `--allow-raw` |
+| `--token X --require-session --allow-raw` | `session` | `operator` | raw tier open to any session holder |
+
+Sharp edge: `--token` **alone** prints `"auth":true` /
+`"auth_mode":"token"` on the boot line, yet `/v1`, `/op`, `/call` and
+`/query` accept any device-token holder with no user identity, no
+rights and no attribution. Only the non-loopback bind path natively
+forces a token. The posture of a live server is observable without
+reading the process list: the boot line carries `auth_mode` **and**
+`raw_tier`; `GET /info` carries `auth_mode`.
+
+Production checklist:
+
+- `--token` **and** `--require-session` together — the token alone is
+  transport authentication, not an identity tier.
+- Non-loopback binds force a token automatically (`bindAllowed` refuses
+  to start otherwise — verified: exit with `token_required` and a
+  fix-it message).
+- Set `--super-user` if your BUSY admin is not the default `Admin`.
+- Tune session TTLs (`--session-idle-ttl`, default 12 h;
+  `--session-abs-ttl`, default 7 d) to your risk tolerance.
+- Data-dir ACLs remain the outer boundary: the bridge reads what the
+  process can read.
+
+The contract (gates per route, error codes) lives in
+[docs/auth-contract.md](docs/auth-contract.md) §5.
+
 ### Threat model
 
 The bridge's default posture is *trusted machine, loopback only*: whoever can
@@ -222,8 +259,9 @@ exposure policy is:
   [docs/auth-contract.md](docs/auth-contract.md)): `POST /auth/login`
   validates credentials through BUSY itself and issues an opaque session
   token; `serve --require-session` makes `/v1` + `/op` require one, with
-  rights deny-by-default (the super user gets full rights, everyone else
-  deny-all until per-user rights land), and raw `/call`/`/query` then
+  rights deny-by-default resolved from BUSY per report id (the super
+  user gets full rights, regular users get their per-user report rights,
+  voucher/master surfaces stay deny-all), and raw `/call`/`/query` then
   need `--allow-raw` or an admin session. Loopback runs without the flag
   keep the device tier exactly as before (`auth_mode: "off"`).
   **Encryption stays out of scope** — it is a proxy's job (below).
